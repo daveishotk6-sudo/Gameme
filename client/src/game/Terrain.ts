@@ -2,7 +2,7 @@ import { BlockType } from './BlockTypes'
 import { CHUNK_SIZE, WORLD_HEIGHT } from './Constants'
 import { getHeight, getBiome } from './Noise'
 
-export type ChunkData = number[][][] // [x][y][z]
+export type ChunkData = number[][][]
 
 export function generateChunk(chunkX: number, chunkZ: number, seed = 0): ChunkData {
   const blocks: ChunkData = []
@@ -14,7 +14,7 @@ export function generateChunk(chunkX: number, chunkZ: number, seed = 0): ChunkDa
       for (let z = 0; z < CHUNK_SIZE; z++) {
         const wx = chunkX * CHUNK_SIZE + x
         const wz = chunkZ * CHUNK_SIZE + z
-        const h = getHeight(wx, wz, seed)
+        const h = Math.min(getHeight(wx, wz, seed), WORLD_HEIGHT - 2)
         const biome = getBiome(wx, wz, seed)
 
         if (y === 0) {
@@ -23,7 +23,7 @@ export function generateChunk(chunkX: number, chunkZ: number, seed = 0): ChunkDa
           blocks[x][y][z] = BlockType.Air
         } else if (y === h) {
           blocks[x][y][z] = biome === 'desert' ? BlockType.Sand : BlockType.Grass
-        } else if (y > h - 4) {
+        } else if (y > h - 3) {
           blocks[x][y][z] = biome === 'desert' ? BlockType.Sand : BlockType.Dirt
         } else {
           blocks[x][y][z] = BlockType.Stone
@@ -32,29 +32,25 @@ export function generateChunk(chunkX: number, chunkZ: number, seed = 0): ChunkDa
     }
   }
 
-  // Simple tree generation
-  for (let x = 2; x < CHUNK_SIZE - 2; x++) {
-    for (let z = 2; z < CHUNK_SIZE - 2; z++) {
+  // Fewer trees for performance
+  for (let x = 3; x < CHUNK_SIZE - 3; x += 2) {
+    for (let z = 3; z < CHUNK_SIZE - 3; z += 2) {
       const wx = chunkX * CHUNK_SIZE + x
       const wz = chunkZ * CHUNK_SIZE + z
-      if ((wx * 17 + wz * 31 + seed) % 47 === 0) {
-        const h = getHeight(wx, wz, seed)
-        if (h + 5 < WORLD_HEIGHT && getBiome(wx, wz, seed) !== 'desert') {
-          // Trunk
-          for (let ty = 1; ty <= 4; ty++) {
+      if ((wx * 13 + wz * 29 + seed) % 61 === 0) {
+        const h = Math.min(getHeight(wx, wz, seed), WORLD_HEIGHT - 7)
+        if (getBiome(wx, wz, seed) !== 'desert') {
+          for (let ty = 1; ty <= 3; ty++) {
             blocks[x][h + ty][z] = BlockType.Wood
           }
-          // Leaves
-          for (let lx = -2; lx <= 2; lx++) {
-            for (let lz = -2; lz <= 2; lz++) {
-              for (let ly = 3; ly <= 5; ly++) {
-                if (Math.abs(lx) + Math.abs(lz) + (ly === 5 ? 1 : 0) < 4) {
-                  const nx = x + lx
-                  const nz = z + lz
-                  if (nx >= 0 && nx < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
-                    if (blocks[nx][h + ly][nz] === BlockType.Air) {
-                      blocks[nx][h + ly][nz] = BlockType.Leaves
-                    }
+          for (let lx = -1; lx <= 1; lx++) {
+            for (let lz = -1; lz <= 1; lz++) {
+              for (let ly = 3; ly <= 4; ly++) {
+                const nx = x + lx
+                const nz = z + lz
+                if (nx >= 0 && nx < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
+                  if (blocks[nx][h + ly][nz] === BlockType.Air) {
+                    blocks[nx][h + ly][nz] = BlockType.Leaves
                   }
                 }
               }

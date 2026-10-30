@@ -40,8 +40,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
   const edits = useGameStore((s) => s.edits)
   const isPaused = useGameStore((s) => s.isPaused)
 
-  // Spawn on top of terrain
-  const spawnY = getHeight(8, 8, seed) + 3
+  const spawnY = getHeight(8, 8, seed) + 2.5
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -61,7 +60,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       if (!isLocked.current || isPaused) return
       yaw.current -= e.movementX * MOUSE_SENSITIVITY
       pitch.current -= e.movementY * MOUSE_SENSITIVITY
-      pitch.current = Math.max(-1.5, Math.min(1.5, pitch.current))
+      pitch.current = Math.max(-1.4, Math.min(1.4, pitch.current))
     }
 
     const onClick = (e: MouseEvent) => {
@@ -80,7 +79,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
 
     const onTouchStart = (e: TouchEvent) => {
       for (const t of Array.from(e.changedTouches)) {
-        if (t.clientX < window.innerWidth * 0.4) {
+        if (t.clientX < window.innerWidth * 0.42) {
           joystick.current = { active: true, dx: 0, dy: 0 }
           ;(joystick.current as any).id = t.identifier
           ;(joystick.current as any).startX = t.clientX
@@ -96,8 +95,8 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       e.preventDefault()
       for (const t of Array.from(e.touches)) {
         if ((joystick.current as any).id === t.identifier) {
-          const dx = (t.clientX - (joystick.current as any).startX) / 60
-          const dy = (t.clientY - (joystick.current as any).startY) / 60
+          const dx = (t.clientX - (joystick.current as any).startX) / 55
+          const dy = (t.clientY - (joystick.current as any).startY) / 55
           joystick.current.dx = Math.max(-1, Math.min(1, dx))
           joystick.current.dy = Math.max(-1, Math.min(1, dy))
         }
@@ -106,7 +105,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
           const dy = t.clientY - touchLook.current.lastY
           yaw.current -= dx * LOOK_SENSITIVITY_MOBILE
           pitch.current -= dy * LOOK_SENSITIVITY_MOBILE
-          pitch.current = Math.max(-1.5, Math.min(1.5, pitch.current))
+          pitch.current = Math.max(-1.4, Math.min(1.4, pitch.current))
           touchLook.current.lastX = t.clientX
           touchLook.current.lastY = t.clientY
         }
@@ -163,7 +162,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       const px = hit.x + hit.face.x
       const py = hit.y + hit.face.y
       const pz = hit.z + hit.face.z
-      if (py < 0 || py >= 48) return
+      if (py < 0 || py >= 32) return
       const pos = body.current?.translation()
       if (
         pos &&
@@ -181,14 +180,19 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
   useFrame(() => {
     if (!body.current || isPaused) return
 
-    // Safety: if we fell below the world, teleport back up
     const pos = body.current.translation()
-    if (pos.y < -5) {
-      const hy = getHeight(Math.floor(pos.x), Math.floor(pos.z), seed) + 3
-      body.current.setTranslation({ x: pos.x, y: hy, z: pos.z }, true)
+
+    // Safety net
+    if (pos.y < -4) {
+      const hy = getHeight(Math.floor(pos.x), Math.floor(pos.z), seed) + 2.5
+      body.current.setTranslation({ x: 8, y: hy, z: 8 }, true)
       body.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
 
+    // Camera = eye height (body origin is feet-ish, capsule center is higher)
+    // Capsule: half-height 0.45 + radius 0.35 → center at ~0.8 from feet
+    // Eyes roughly at top of capsule ≈ body.y + 1.15
+    camera.position.set(pos.x, pos.y + 1.15, pos.z)
     camera.rotation.order = 'YXZ'
     camera.rotation.y = yaw.current
     camera.rotation.x = pitch.current
@@ -211,25 +215,19 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       move.add(right.clone().multiplyScalar(joystick.current.dx))
     }
 
+    const vel = body.current.linvel()
     if (move.length() > 0) {
       move.normalize().multiplyScalar(speed)
-      const vel = body.current.linvel()
       body.current.setLinvel({ x: move.x, y: vel.y, z: move.z }, true)
     } else {
-      const vel = body.current.linvel()
       body.current.setLinvel({ x: 0, y: vel.y, z: 0 }, true)
     }
 
-    if (keys.current['Space']) {
-      const vel = body.current.linvel()
-      if (Math.abs(vel.y) < 0.2) {
-        body.current.setLinvel({ x: vel.x, y: JUMP_FORCE, z: vel.z }, true)
-      }
+    if (keys.current['Space'] && Math.abs(vel.y) < 0.25) {
+      body.current.setLinvel({ x: vel.x, y: JUMP_FORCE, z: vel.z }, true)
     }
 
-    const p = body.current.translation()
-    camera.position.set(p.x, p.y + 0.7, p.z)
-    onMove?.(p.x, p.z)
+    onMove?.(pos.x, pos.z)
   })
 
   return (
@@ -239,10 +237,11 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       enabledRotations={[false, false, false]}
       colliders={false}
       mass={1}
-      linearDamping={0.1}
-      ccd
+      linearDamping={0.15}
+      ccd={false}
     >
-      <CapsuleCollider args={[0.45, 0.35]} position={[0, 0.8, 0]} />
+      {/* Capsule: radius 0.3, half-height 0.5 → total height ~1.6 */}
+      <CapsuleCollider args={[0.5, 0.3]} position={[0, 0.8, 0]} />
     </RigidBody>
   )
 }

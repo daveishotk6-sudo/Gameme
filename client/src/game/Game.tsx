@@ -23,26 +23,24 @@ function DayNightCycle() {
 
   useFrame((_, delta) => {
     const state = useGameStore.getState()
-    let t = state.timeOfDay + delta * 0.008
+    let t = state.timeOfDay + delta * 0.006
     if (t > 1) t -= 1
     setTimeOfDay(t)
 
     const angle = t * Math.PI * 2 - Math.PI / 2
-    const sunX = Math.cos(angle) * 100
-    const sunY = Math.sin(angle) * 80
-    const sunZ = 40
+    const sunY = Math.sin(angle) * 60
 
     if (sunRef.current) {
-      sunRef.current.position.set(sunX, Math.max(5, sunY), sunZ)
-      sunRef.current.intensity = Math.max(0.12, Math.min(1.2, sunY / 70))
+      sunRef.current.position.set(Math.cos(angle) * 80, Math.max(8, sunY), 30)
+      sunRef.current.intensity = Math.max(0.2, Math.min(1.0, sunY / 50))
     }
   })
 
   return (
     <>
-      <Sky distance={450000} sunPosition={[80, 40, 80]} inclination={0.6} azimuth={0.25} />
-      <ambientLight intensity={0.35} />
-      <directionalLight ref={sunRef} intensity={1.1} position={[40, 60, 30]} />
+      <Sky distance={300000} sunPosition={[60, 30, 60]} inclination={0.55} azimuth={0.25} />
+      <ambientLight intensity={0.45} />
+      <directionalLight ref={sunRef} intensity={0.9} position={[40, 50, 20]} />
     </>
   )
 }
@@ -54,22 +52,31 @@ export default function Game({ seed, onExit }: GameProps) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
         shadows={false}
-        dpr={[1, 1.5]}
-        gl={{ antialias: false, powerPreference: 'high-performance' }}
-        camera={{
-          position: [8, 32, 8],
-          fov: 75,
-          near: 0.1,
-          far: 400,
+        dpr={1}
+        frameloop="always"
+        gl={{
+          antialias: false,
+          powerPreference: 'low-power',
+          alpha: false,
+          stencil: false,
+          depth: true,
         }}
-        onCreated={({ gl }) => {
+        camera={{
+          position: [8, 25, 8],
+          fov: 70,
+          near: 0.15,
+          far: 120,
+        }}
+        onCreated={({ gl, camera }) => {
           gl.setClearColor('#87CEEB')
+          gl.setPixelRatio(1)
+          camera.rotation.order = 'YXZ'
         }}
       >
         <DayNightCycle />
 
         <Suspense fallback={null}>
-          <Physics gravity={[0, -28, 0]} timeStep="vary">
+          <Physics gravity={[0, -26, 0]} timeStep={1 / 30} maxSteps={1}>
             <World seed={seed} />
           </Physics>
         </Suspense>

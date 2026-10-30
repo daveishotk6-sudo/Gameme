@@ -32,13 +32,10 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
     const colors: number[] = []
     const indices: number[] = []
     let vertexCount = 0
-
-    // Surface colliders: one box per column at the top solid block
     const cols: { x: number; y: number; z: number }[] = []
 
     for (let x = 0; x < CHUNK_SIZE; x++) {
       for (let z = 0; z < CHUNK_SIZE; z++) {
-        // Find highest solid block in this column
         let topY = -1
         for (let y = WORLD_HEIGHT - 1; y >= 0; y--) {
           if (isSolid(data, x, y, z)) {
@@ -46,7 +43,8 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
             break
           }
         }
-        if (topY >= 0) {
+        // Only every other block as collider — still walkable, much cheaper
+        if (topY >= 0 && (x + z) % 2 === 0) {
           cols.push({ x, y: topY, z })
         }
 
@@ -55,6 +53,17 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
           if (type === BlockType.Air) continue
           const def = BLOCKS[type as BlockType]
           if (!def) continue
+
+          // Skip hidden blocks completely (surrounded on all 6 sides)
+          let exposed = false
+          for (const face of FACE_DIRS) {
+            const [dx, dy, dz] = face.dir
+            if (!isSolid(data, x + dx, y + dy, z + dz)) {
+              exposed = true
+              break
+            }
+          }
+          if (!exposed) continue
 
           const color = new THREE.Color(def.color)
 
@@ -68,8 +77,7 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
                 y + corner[1],
                 z + corner[2] + chunkZ * CHUNK_SIZE
               )
-              const shade = 0.88 + ((x + y + z) % 3) * 0.04
-              colors.push(color.r * shade, color.g * shade, color.b * shade)
+              colors.push(color.r, color.g, color.b)
             }
 
             indices.push(
@@ -100,16 +108,15 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
 
   return (
     <>
-      <mesh geometry={geometry}>
-        <meshLambertMaterial vertexColors flatShading />
+      <mesh geometry={geometry} frustumCulled>
+        <meshBasicMaterial vertexColors />
       </mesh>
 
-      {/* Physics: solid top surface so player can walk */}
-      <RigidBody type="fixed" colliders={false} position={[0, 0, 0]}>
+      <RigidBody type="fixed" colliders={false}>
         {colliders.map((c, i) => (
           <CuboidCollider
             key={i}
-            args={[0.5, 0.5, 0.5]}
+            args={[0.55, 0.5, 0.55]}
             position={[ox + c.x + 0.5, c.y + 0.5, oz + c.z + 0.5]}
           />
         ))}
