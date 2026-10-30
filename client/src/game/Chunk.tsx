@@ -46,7 +46,8 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
             break
           }
         }
-        if (topY >= 0 && ((x + z) & 1) === 0) {
+        // Full surface colliders — no gaps to fall through
+        if (topY >= 0) {
           cols.push({ x, y: topY, z })
         }
 
@@ -62,12 +63,11 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
             const [dx, dy, dz] = face.dir
             if (isSolid(data, x + dx, y + dy, z + dz)) continue
 
-            // Shade by face direction for depth
             let shade = 1
             if (face.dir[1] === 1) shade = 1.05
-            else if (face.dir[1] === -1) shade = 0.55
-            else if (face.dir[0] !== 0) shade = 0.8
-            else shade = 0.9
+            else if (face.dir[1] === -1) shade = 0.5
+            else if (face.dir[0] !== 0) shade = 0.78
+            else shade = 0.88
 
             for (const corner of face.corners) {
               positions.push(ox + x + corner[0], y + corner[1], oz + z + corner[2])
@@ -110,7 +110,7 @@ export default function Chunk({ chunkX, chunkZ, data }: ChunkProps) {
         {colliders.map((c, i) => (
           <CuboidCollider
             key={i}
-            args={[0.55, 0.5, 0.55]}
+            args={[0.5, 0.5, 0.5]}
             position={[ox + c.x + 0.5, c.y + 0.5, oz + c.z + 0.5]}
           />
         ))}

@@ -30,6 +30,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
   const isLocked = useRef(false)
   const touchLook = useRef({ active: false, lastX: 0, lastY: 0 })
   const joystick = useRef({ active: false, dx: 0, dy: 0 })
+  const ready = useRef(false)
 
   const selectedSlot = useGameStore((s) => s.selectedSlot)
   const setSelectedSlot = useGameStore((s) => s.setSelectedSlot)
@@ -40,7 +41,9 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
   const edits = useGameStore((s) => s.edits)
   const isPaused = useGameStore((s) => s.isPaused)
 
-  const spawnY = getHeight(8, 8, seed) + 2.2
+  // Spawn well above terrain so we never start inside blocks
+  const groundY = getHeight(8, 8, seed)
+  const spawnY = groundY + 5
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -181,14 +184,16 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
 
     const pos = body.current.translation()
 
-    if (pos.y < -4) {
-      const hy = getHeight(8, 8, seed) + 2.2
-      body.current.setTranslation({ x: 8, y: hy, z: 8 }, true)
+    // If somehow inside/under ground, snap above surface
+    if (pos.y < groundY - 1 || pos.y < -2) {
+      body.current.setTranslation({ x: 8, y: spawnY, z: 8 }, true)
       body.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
 
-    // Eye height aligned with capsule top
-    camera.position.set(pos.x, pos.y + 1.2, pos.z)
+    // Body origin is near the feet of the capsule setup
+    // Capsule center at +0.8, half-height 0.5 + radius 0.3 → top ~1.6
+    // Eyes slightly below top of head
+    camera.position.set(pos.x, pos.y + 1.45, pos.z)
     camera.rotation.order = 'YXZ'
     camera.rotation.y = yaw.current
     camera.rotation.x = pitch.current
@@ -219,7 +224,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       body.current.setLinvel({ x: 0, y: vel.y, z: 0 }, true)
     }
 
-    if (keys.current['Space'] && Math.abs(vel.y) < 0.25) {
+    if (keys.current['Space'] && Math.abs(vel.y) < 0.3) {
       body.current.setLinvel({ x: vel.x, y: JUMP_FORCE, z: vel.z }, true)
     }
 
@@ -233,8 +238,13 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       enabledRotations={[false, false, false]}
       colliders={false}
       mass={1}
-      linearDamping={0.15}
+      linearDamping={0.2}
+      lockRotations
     >
+      {/*
+        Capsule: half-height 0.5, radius 0.3
+        Placed so bottom of capsule is near body origin (feet)
+      */}
       <CapsuleCollider args={[0.5, 0.3]} position={[0, 0.8, 0]} />
     </RigidBody>
   )
