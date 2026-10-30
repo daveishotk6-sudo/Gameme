@@ -1,19 +1,26 @@
 /**
- * Colyseus client wrapper.
- * Connects to the game server when multiplayer is enabled.
+ * Colyseus client – auto-detects Railway / local URL
  */
 import { Client, Room } from 'colyseus.js'
 
 let client: Client | null = null
 let room: Room | null = null
 
+function getServerUrl() {
+  // On Railway the client and server share the same origin
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${window.location.host}`
+  }
+  return import.meta.env.VITE_SERVER_URL || 'ws://localhost:2567'
+}
+
 export async function connectToRoom(options: {
-  serverUrl?: string
   name?: string
   seed?: number
   mode?: string
 }) {
-  const url = options.serverUrl || import.meta.env.VITE_SERVER_URL || 'ws://localhost:2567'
+  const url = getServerUrl()
   client = new Client(url)
 
   room = await client.joinOrCreate('game', {

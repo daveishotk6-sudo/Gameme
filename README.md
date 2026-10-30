@@ -1,72 +1,50 @@
 # Gameme — Browser 3D Voxel Sandbox
 
-Full browser-based 3D sandbox with procedural voxels, multiplayer-ready architecture, and mobile support.
+Playable in any browser (including iPad Safari). No local install required when deployed on Railway.
 
-## Current Features
-- Procedural voxel terrain (biomes, trees, bedrock)
-- Chunk streaming (load / unload)
-- First-person controls (keyboard + mouse)
-- Mobile touch: virtual joystick + look drag
-- Place & break blocks (raycast)
-- Inventory + hotbar (1-9 keys)
+## Deploy on Railway (recommended for iPad)
+
+1. Go to [railway.app](https://railway.app) and sign in with GitHub.
+2. **New Project** → **Deploy from GitHub repo** → select `daveishotk6-sudo/Gameme`.
+3. Railway will automatically detect the config and run:
+   - `npm run install:all`
+   - `npm run build` (builds client + server)
+   - `npm start` (serves the game)
+4. When the deploy finishes, open the public URL Railway gives you on your iPad.
+
+That’s it — the game runs fully in the browser.
+
+### Optional: custom domain
+In the Railway service settings you can attach a custom domain.
+
+## What works right now
+- Procedural voxel world + trees + biomes
+- Place / break blocks
+- Inventory + hotbar
+- First-person + mobile touch controls (joystick + look)
 - Day / night cycle
-- Pause menu + main menu + loading screen
-- Chat UI (ready for multiplayer)
-- Colyseus multiplayer server + client stub
-- Host build-permission system on server
+- Menus, pause, chat UI
+- Multiplayer server ready (Colyseus)
 
-## Tech
-- **Client**: React 18, TypeScript, Vite, React Three Fiber, Drei, Rapier, Zustand
-- **Server**: Node.js, Colyseus, Express
-- **Database**: PostgreSQL (ready)
-- **Deploy target**: Railway
+## Controls (iPad)
+- **Left side of screen** → move (virtual stick)
+- **Right side** → look around (drag)
+- **Tap** → break / place (depending on mode)
+- Use the on-screen hotbar at the bottom
+- Menu button (top right) to pause / exit
 
-## Quick Start
-
-### Client
+## Local development (only if you have a computer later)
 ```bash
-cd client
-npm install
-npm run dev
+npm run install:all
+npm run dev:client   # or dev:server
 ```
-Open http://localhost:5173
 
-### Server
-```bash
-cd server
-npm install
-npm run dev
-```
-Server runs on :2567
-
-## Controls
-| Action | Desktop | Mobile |
-|--------|---------|--------|
-| Move | WASD | Left stick |
-| Look | Mouse | Right drag |
-| Jump | Space | — |
-| Sprint | Shift | — |
-| Break | LMB | Tap |
-| Place | RMB | — |
-| Hotbar | 1-9 | Tap slots |
-| Pause | Esc | Menu button |
-
-## Project Layout
+## Project structure
 ```
 /
-├── client/src/
-│   ├── game/          # Voxel engine, player, world, store
-│   ├── ui/            # Menus, HUD, chat, mobile
-│   └── network/       # Colyseus client
-├── server/src/
-│   └── rooms/         # GameRoom
-└── shared/            # Shared types
+├── client/     # React + R3F game (builds to client/dist)
+├── server/     # Express + Colyseus (serves client/dist in production)
+├── shared/     # Shared types
+├── railway.toml
+└── package.json
 ```
-
-## Roadmap remaining
-- Full multiplayer sync of blocks & players
-- PostgreSQL world save/load
-- Adventure objectives
-- Weather particles
-- Friend invite links
-- Railway deployment config
