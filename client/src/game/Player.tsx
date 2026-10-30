@@ -2,18 +2,26 @@ import { useRef, useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { RigidBody, CapsuleCollider } from '@react-three/rapier'
 import * as THREE from 'three'
-import { PLAYER_SPEED, JUMP_FORCE, MOUSE_SENSITIVITY, SPRINT_MULTIPLIER, LOOK_SENSITIVITY_MOBILE } from './Constants'
+import {
+  PLAYER_SPEED,
+  JUMP_FORCE,
+  MOUSE_SENSITIVITY,
+  SPRINT_MULTIPLIER,
+  LOOK_SENSITIVITY_MOBILE,
+} from './Constants'
 import { useGameStore } from './store'
 import { BlockType } from './BlockTypes'
 import { raycastVoxel } from './Raycast'
+import { getHeight } from './Noise'
 import type { ChunkData } from './Terrain'
 
 interface PlayerProps {
   onMove?: (x: number, z: number) => void
   chunksRef: React.MutableRefObject<Map<string, ChunkData>>
+  seed: number
 }
 
-export default function Player({ onMove, chunksRef }: PlayerProps) {
+export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
   const body = useRef<any>(null)
   const { camera, gl } = useThree()
   const keys = useRef<Record<string, boolean>>({})
@@ -32,10 +40,12 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
   const edits = useGameStore((s) => s.edits)
   const isPaused = useGameStore((s) => s.isPaused)
 
+  // Spawn on top of terrain
+  const spawnY = getHeight(8, 8, seed) + 3
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       keys.current[e.code] = true
-      // Hotbar 1-9
       if (e.code.startsWith('Digit')) {
         const n = parseInt(e.code.replace('Digit', ''), 10)
         if (n >= 1 && n <= 9) setSelectedSlot(n - 1)
@@ -43,7 +53,9 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
       if (e.code === 'KeyE') useGameStore.getState().toggleInventory()
       if (e.code === 'Escape') useGameStore.getState().setPaused(!useGameStore.getState().isPaused)
     }
-    const onKeyUp = (e: KeyboardEvent) => { keys.current[e.code] = false }
+    const onKeyUp = (e: KeyboardEvent) => {
+      keys.current[e.code] = false
+    }
 
     const onMouseMove = (e: MouseEvent) => {
       if (!isLocked.current || isPaused) return
@@ -62,22 +74,18 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
     }
 
     const onContextMenu = (e: Event) => e.preventDefault()
-
     const onLockChange = () => {
       isLocked.current = document.pointerLockElement === document.body
     }
 
-    // Mobile touch
     const onTouchStart = (e: TouchEvent) => {
       for (const t of Array.from(e.changedTouches)) {
         if (t.clientX < window.innerWidth * 0.4) {
-          // Left side = joystick
           joystick.current = { active: true, dx: 0, dy: 0 }
           ;(joystick.current as any).id = t.identifier
           ;(joystick.current as any).startX = t.clientX
           ;(joystick.current as any).startY = t.clientY
         } else {
-          // Right side = look
           touchLook.current = { active: true, lastX: t.clientX, lastY: t.clientY }
           ;(touchLook.current as any).id = t.identifier
         }
@@ -147,10 +155,7 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
     if (!hit) return
 
     if (action === 'break') {
-      const type = edits.get(`${hit.x},${hit.y},${hit.z}`)
-      // We don't have original block easily here for pickup, just clear
       setBlock(hit.x, hit.y, hit.z, BlockType.Air)
-      // Simple pickup of stone for now if unknown
       addItem(BlockType.Stone, 1)
     } else {
       const slot = hotbar[selectedSlot]
@@ -159,9 +164,14 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
       const py = hit.y + hit.face.y
       const pz = hit.z + hit.face.z
       if (py < 0 || py >= 48) return
-      // Prevent placing inside player
       const pos = body.current?.translation()
-      if (pos && Math.abs(pos.x - px - 0.5) < 0.7 && Math.abs(pos.z - pz - 0.5) < 0.7 && Math.abs(pos.y - py) < 1.8) return
+      if (
+        pos &&
+        Math.abs(pos.x - px - 0.5) < 0.7 &&
+        Math.abs(pos.z - pz - 0.5) < 0.7 &&
+        Math.abs(pos.y - py) < 1.8
+      )
+        return
       if (removeItem(slot.type, 1)) {
         setBlock(px, py, pz, slot.type)
       }
@@ -170,6 +180,14 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
 
   useFrame(() => {
     if (!body.current || isPaused) return
+
+    // Safety: if we fell below the world, teleport back up
+    const pos = body.current.translation()
+    if (pos.y < -5) {
+      const hy = getHeight(Math.floor(pos.x), Math.floor(pos.z), seed) + 3
+      body.current.setTranslation({ x: pos.x, y: hy, z: pos.z }, true)
+      body.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    }
 
     camera.rotation.order = 'YXZ'
     camera.rotation.y = yaw.current
@@ -188,7 +206,6 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
     if (keys.current['KeyA']) move.sub(right)
     if (keys.current['KeyD']) move.add(right)
 
-    // Mobile joystick
     if (joystick.current.active) {
       move.add(forward.clone().multiplyScalar(-joystick.current.dy))
       move.add(right.clone().multiplyScalar(joystick.current.dx))
@@ -205,26 +222,27 @@ export default function Player({ onMove, chunksRef }: PlayerProps) {
 
     if (keys.current['Space']) {
       const vel = body.current.linvel()
-      if (Math.abs(vel.y) < 0.15) {
+      if (Math.abs(vel.y) < 0.2) {
         body.current.setLinvel({ x: vel.x, y: JUMP_FORCE, z: vel.z }, true)
       }
     }
 
-    const pos = body.current.translation()
-    camera.position.set(pos.x, pos.y + 0.7, pos.z)
-    onMove?.(pos.x, pos.z)
+    const p = body.current.translation()
+    camera.position.set(p.x, p.y + 0.7, p.z)
+    onMove?.(p.x, p.z)
   })
 
   return (
     <RigidBody
       ref={body}
-      position={[8, 32, 8]}
+      position={[8, spawnY, 8]}
       enabledRotations={[false, false, false]}
       colliders={false}
       mass={1}
-      linearDamping={0.05}
+      linearDamping={0.1}
+      ccd
     >
-      <CapsuleCollider args={[0.5, 0.35]} position={[0, 0.85, 0]} />
+      <CapsuleCollider args={[0.45, 0.35]} position={[0, 0.8, 0]} />
     </RigidBody>
   )
 }
