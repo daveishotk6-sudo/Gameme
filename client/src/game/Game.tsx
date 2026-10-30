@@ -1,6 +1,6 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
-import { Sky } from '@react-three/drei'
+import { Sky, Fog } from '@react-three/drei'
 import { Suspense, useRef } from 'react'
 import * as THREE from 'three'
 import World from './World'
@@ -23,24 +23,25 @@ function DayNightCycle() {
 
   useFrame((_, delta) => {
     const state = useGameStore.getState()
-    let t = state.timeOfDay + delta * 0.006
+    let t = state.timeOfDay + delta * 0.005
     if (t > 1) t -= 1
     setTimeOfDay(t)
 
     const angle = t * Math.PI * 2 - Math.PI / 2
-    const sunY = Math.sin(angle) * 60
+    const sunY = Math.sin(angle) * 55
 
     if (sunRef.current) {
-      sunRef.current.position.set(Math.cos(angle) * 80, Math.max(8, sunY), 30)
-      sunRef.current.intensity = Math.max(0.2, Math.min(1.0, sunY / 50))
+      sunRef.current.position.set(Math.cos(angle) * 70, Math.max(10, sunY), 25)
+      sunRef.current.intensity = Math.max(0.25, Math.min(1.0, sunY / 45))
     }
   })
 
   return (
     <>
-      <Sky distance={300000} sunPosition={[60, 30, 60]} inclination={0.55} azimuth={0.25} />
-      <ambientLight intensity={0.45} />
-      <directionalLight ref={sunRef} intensity={0.9} position={[40, 50, 20]} />
+      <Sky distance={300000} sunPosition={[50, 35, 50]} inclination={0.5} azimuth={0.25} />
+      <fog attach="fog" args={['#a0c4e8', 35, 85]} />
+      <ambientLight intensity={0.55} />
+      <directionalLight ref={sunRef} intensity={0.85} position={[40, 45, 20]} />
     </>
   )
 }
@@ -53,22 +54,20 @@ export default function Game({ seed, onExit }: GameProps) {
       <Canvas
         shadows={false}
         dpr={1}
-        frameloop="always"
         gl={{
           antialias: false,
           powerPreference: 'low-power',
           alpha: false,
           stencil: false,
-          depth: true,
         }}
         camera={{
-          position: [8, 25, 8],
+          position: [8, 22, 8],
           fov: 70,
-          near: 0.15,
+          near: 0.1,
           far: 120,
         }}
         onCreated={({ gl, camera }) => {
-          gl.setClearColor('#87CEEB')
+          gl.setClearColor('#a0c4e8')
           gl.setPixelRatio(1)
           camera.rotation.order = 'YXZ'
         }}

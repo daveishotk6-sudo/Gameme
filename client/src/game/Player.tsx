@@ -40,7 +40,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
   const edits = useGameStore((s) => s.edits)
   const isPaused = useGameStore((s) => s.isPaused)
 
-  const spawnY = getHeight(8, 8, seed) + 2.5
+  const spawnY = getHeight(8, 8, seed) + 2.2
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -49,7 +49,6 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
         const n = parseInt(e.code.replace('Digit', ''), 10)
         if (n >= 1 && n <= 9) setSelectedSlot(n - 1)
       }
-      if (e.code === 'KeyE') useGameStore.getState().toggleInventory()
       if (e.code === 'Escape') useGameStore.getState().setPaused(!useGameStore.getState().isPaused)
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -162,7 +161,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       const px = hit.x + hit.face.x
       const py = hit.y + hit.face.y
       const pz = hit.z + hit.face.z
-      if (py < 0 || py >= 32) return
+      if (py < 0 || py >= 36) return
       const pos = body.current?.translation()
       if (
         pos &&
@@ -182,17 +181,14 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
 
     const pos = body.current.translation()
 
-    // Safety net
     if (pos.y < -4) {
-      const hy = getHeight(Math.floor(pos.x), Math.floor(pos.z), seed) + 2.5
+      const hy = getHeight(8, 8, seed) + 2.2
       body.current.setTranslation({ x: 8, y: hy, z: 8 }, true)
       body.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
 
-    // Camera = eye height (body origin is feet-ish, capsule center is higher)
-    // Capsule: half-height 0.45 + radius 0.35 → center at ~0.8 from feet
-    // Eyes roughly at top of capsule ≈ body.y + 1.15
-    camera.position.set(pos.x, pos.y + 1.15, pos.z)
+    // Eye height aligned with capsule top
+    camera.position.set(pos.x, pos.y + 1.2, pos.z)
     camera.rotation.order = 'YXZ'
     camera.rotation.y = yaw.current
     camera.rotation.x = pitch.current
@@ -238,9 +234,7 @@ export default function Player({ onMove, chunksRef, seed }: PlayerProps) {
       colliders={false}
       mass={1}
       linearDamping={0.15}
-      ccd={false}
     >
-      {/* Capsule: radius 0.3, half-height 0.5 → total height ~1.6 */}
       <CapsuleCollider args={[0.5, 0.3]} position={[0, 0.8, 0]} />
     </RigidBody>
   )
