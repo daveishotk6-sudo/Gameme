@@ -1,5 +1,5 @@
 interface MainMenuProps {
-  onStart: (seed?: number) => void
+  onStart: (opts?: { seed?: number; mode?: 'sandbox' | 'adventure' }) => void
 }
 
 export default function MainMenu({ onStart }: MainMenuProps) {
@@ -9,15 +9,22 @@ export default function MainMenu({ onStart }: MainMenuProps) {
         <h1 style={styles.title}>GAMEME</h1>
         <p style={styles.subtitle}>3D Voxel Sandbox</p>
 
-        <button style={styles.btn} onClick={() => onStart()}>
+        <button style={styles.btn} onClick={() => onStart({ mode: 'sandbox' })}>
           Play Sandbox
         </button>
 
-        <button style={{ ...styles.btn, ...styles.secondary }} onClick={() => onStart(42)}>
+        <button style={{ ...styles.btn, ...styles.secondary }} onClick={() => onStart({ mode: 'adventure', seed: 42 })}>
           Adventure Mode
         </button>
 
-        <p style={styles.hint}>Click to lock mouse · WASD move · Space jump · Shift sprint</p>
+        <button style={{ ...styles.btn, background: '#7b1fa2' }} onClick={() => onStart({ mode: 'sandbox' })}>
+          Multiplayer (Local)
+        </button>
+
+        <p style={styles.hint}>
+          Desktop: Click · WASD · Mouse · LMB break · RMB place · 1-9 hotbar · Esc pause<br />
+          Mobile: Left stick move · Right drag look
+        </p>
       </div>
     </div>
   )
@@ -41,6 +48,7 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: 'blur(12px)',
     boxShadow: '0 20px 50px rgba(0,0,0,0.4)',
     minWidth: '320px',
+    maxWidth: '420px',
   },
   title: {
     fontSize: '3.2rem',
@@ -72,7 +80,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hint: {
     marginTop: '1.8rem',
-    fontSize: '0.8rem',
+    fontSize: '0.78rem',
     opacity: 0.55,
+    lineHeight: 1.5,
   },
 }

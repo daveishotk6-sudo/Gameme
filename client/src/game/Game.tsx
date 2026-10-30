@@ -8,25 +8,25 @@ import Crosshair from '../ui/Crosshair'
 import HUD from '../ui/HUD'
 import PauseMenu from '../ui/PauseMenu'
 import MobileControls from '../ui/MobileControls'
+import Chat from '../ui/Chat'
 import { useGameStore } from './store'
 
 interface GameProps {
   seed: number
+  mode?: 'sandbox' | 'adventure'
   onExit: () => void
 }
 
 function DayNightCycle() {
   const setTimeOfDay = useGameStore((s) => s.setTimeOfDay)
   const sunRef = useRef<THREE.DirectionalLight>(null)
-  const skyRef = useRef<any>(null)
 
   useFrame((_, delta) => {
     const state = useGameStore.getState()
-    let t = state.timeOfDay + delta * 0.008 // ~2 min full cycle
+    let t = state.timeOfDay + delta * 0.008
     if (t > 1) t -= 1
     setTimeOfDay(t)
 
-    // Sun position: circle over the day
     const angle = t * Math.PI * 2 - Math.PI / 2
     const sunX = Math.cos(angle) * 100
     const sunY = Math.sin(angle) * 80
@@ -34,19 +34,13 @@ function DayNightCycle() {
 
     if (sunRef.current) {
       sunRef.current.position.set(sunX, Math.max(5, sunY), sunZ)
-      sunRef.current.intensity = Math.max(0.15, sunY / 80)
+      sunRef.current.intensity = Math.max(0.12, Math.min(1.2, sunY / 70))
     }
   })
 
   return (
     <>
-      <Sky
-        ref={skyRef}
-        distance={450000}
-        sunPosition={[80, 40, 80]}
-        inclination={0.6}
-        azimuth={0.25}
-      />
+      <Sky distance={450000} sunPosition={[80, 40, 80]} inclination={0.6} azimuth={0.25} />
       <ambientLight intensity={0.35} />
       <directionalLight ref={sunRef} intensity={1.1} position={[40, 60, 30]} />
     </>
@@ -84,6 +78,7 @@ export default function Game({ seed, onExit }: GameProps) {
       <Crosshair />
       <HUD onExit={onExit} />
       <MobileControls />
+      <Chat />
       {isPaused && <PauseMenu onExit={onExit} />}
     </div>
   )
