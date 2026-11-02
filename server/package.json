@@ -1,5 +1,9 @@
 {
   "name": "gameme-server",
   "private": true,
-  "version": "0.3.0"
+  "version": "0.3.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "start": "node serve.js"
+  }
 }

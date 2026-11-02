@@ -363,55 +363,40 @@ export default function VoxelView({ seed, onExit }: Props) {
   }, [seed]);
 
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#87b7e8] text-white select-none">
-      <div ref={host} className="absolute inset-0" />
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute top-1/2 left-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2">
-          <div className="absolute top-1/2 left-0 h-0.5 w-full -translate-y-1/2 bg-white/90" />
-          <div className="absolute top-0 left-1/2 h-full w-0.5 -translate-x-1/2 bg-white/90" />
-        </div>
-      </div>
+    <div className="stage">
+      <div ref={host} className="host" />
+      <div className="cross" />
 
-      <div className="pointer-events-none absolute top-3 right-3 left-3 flex items-start justify-between">
-        <div className="rounded-lg bg-black/45 px-3 py-1.5 text-xs tracking-wide">Gameme</div>
-        <button
-          data-hud
-          type="button"
-          className="pointer-events-auto rounded-lg border border-white/20 bg-black/50 px-3 py-1.5 text-sm"
-          onClick={() => setPaused(true)}
-        >
+      <div className="topbar">
+        <div className="badge">Gameme</div>
+        <button data-hud type="button" className="menu-btn" onClick={() => setPaused(true)}>
           Menu
         </button>
       </div>
 
-      <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-1 rounded-xl bg-black/55 p-1.5">
+      <div className="hotbar">
         {HOTBAR.map((id, i) => (
           <button
             data-hud
             key={id}
             type="button"
             onClick={() => setSelected(i)}
-            className="relative h-11 w-11 rounded-md"
-            style={{
-              background: BLOCKS[id]?.color ?? "#333",
-              outline: i === selected ? "2px solid white" : "2px solid transparent",
-            }}
+            className={i === selected ? "slot on" : "slot"}
+            style={{ background: BLOCKS[id]?.color ?? "#333" }}
             aria-label={BLOCKS[id]?.name}
           >
-            <span className="absolute right-0.5 bottom-0 text-[10px] font-semibold text-white drop-shadow">
-              {counts[id] ?? 0}
-            </span>
+            <span>{counts[id] ?? 0}</span>
           </button>
         ))}
       </div>
 
-      <div className="pointer-events-none absolute bottom-24 left-6 h-28 w-28 rounded-full border-2 border-white/30 bg-white/10 md:hidden" />
+      <div className="joy" />
 
-      <div className="absolute right-4 bottom-28 flex flex-col gap-2 md:bottom-24">
+      <div className="actions">
         <button
           data-hud
           type="button"
-          className="h-14 w-14 rounded-full bg-white/20 text-sm font-bold backdrop-blur-sm active:bg-white/40"
+          className="round"
           onPointerDown={(e) => {
             e.preventDefault();
             breakQueued.current = true;
@@ -422,7 +407,7 @@ export default function VoxelView({ seed, onExit }: Props) {
         <button
           data-hud
           type="button"
-          className="h-16 w-16 rounded-full bg-emerald-500 text-base font-bold shadow-lg active:bg-emerald-400"
+          className="round jump"
           onPointerDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -443,7 +428,7 @@ export default function VoxelView({ seed, onExit }: Props) {
         <button
           data-hud
           type="button"
-          className="h-14 w-14 rounded-full bg-white/20 text-sm font-bold backdrop-blur-sm active:bg-white/40"
+          className="round"
           onPointerDown={(e) => {
             e.preventDefault();
             placeQueued.current = true;
@@ -454,20 +439,16 @@ export default function VoxelView({ seed, onExit }: Props) {
       </div>
 
       {paused && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70">
-          <div className="w-[min(92vw,320px)] rounded-2xl bg-zinc-900 p-6 text-center shadow-2xl">
-            <h2 className="mb-4 text-2xl font-bold">Paused</h2>
-            <button
-              type="button"
-              className="mb-2 w-full rounded-lg bg-emerald-600 py-3 font-semibold"
-              onClick={() => setPaused(false)}
-            >
+        <div className="pause">
+          <div className="card">
+            <h2>Paused</h2>
+            <button type="button" className="resume" onClick={() => setPaused(false)}>
               Resume
             </button>
-            <button type="button" className="w-full rounded-lg bg-red-600 py-3 font-semibold" onClick={onExit}>
+            <button type="button" className="exit" onClick={onExit}>
               Exit
             </button>
-            <p className="mt-4 text-xs text-white/60">WASD · Space / Jump · Mine & Place · drag right side to look</p>
+            <p className="note">WASD · Space / Jump · Mine and Place · drag the right side to look</p>
           </div>
         </div>
       )}
