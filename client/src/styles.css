@@ -1,6 +1,6 @@
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; background: #87b7e8; }
+html, body, #root { margin: 0; height: 100%; height: 100svh; overflow: hidden; background: #87b7e8; }
 button { font: inherit; color: inherit; }
 
 .menu {
@@ -20,7 +20,7 @@ button { font: inherit; color: inherit; }
   text-align: center;
 }
 .kicker { letter-spacing: .35em; font-size: 12px; color: #6ee7b7; margin: 0; }
-.card h1 { font-size: 48px; margin: 8px 0; letter-spacing: .04em; }
+.card h1 { font-size: 36px; margin: 8px 0; letter-spacing: .04em; }
 .card p { color: rgba(255,255,255,.72); font-size: 14px; }
 .play, .seed, .resume, .exit {
   width: 100%; border: 0; border-radius: 12px; padding: 12px; font-weight: 700; margin-top: 8px;
@@ -29,7 +29,7 @@ button { font: inherit; color: inherit; }
 .seed { background: #0ea5e9; color: white; }
 .help { text-align: left; color: rgba(255,255,255,.6); font-size: 12px; padding-left: 18px; }
 
-.stage { position: relative; height: 100dvh; width: 100%; overflow: hidden; background: #87b7e8; color: white; user-select: none; touch-action: none; }
+.stage { position: fixed; inset: 0; height: 100svh; width: 100%; overflow: hidden; background: #87b7e8; color: white; user-select: none; touch-action: none; }
 .host { position: absolute; inset: 0; }
 .cross {
   position: absolute; left: 50%; top: 50%; width: 16px; height: 16px;
@@ -51,7 +51,7 @@ button { font: inherit; color: inherit; }
   display: flex; gap: 4px; background: rgba(0,0,0,.55); padding: 6px; border-radius: 12px;
 }
 .slot {
-  position: relative; width: 44px; height: 44px; border-radius: 6px; border: 2px solid transparent; padding: 0;
+  position: relative; width: 36px; height: 36px; border-radius: 6px; border: 2px solid transparent; padding: 0;
 }
 .slot.on { border-color: white; }
 .slot span {
@@ -59,16 +59,16 @@ button { font: inherit; color: inherit; }
   text-shadow: 0 1px 2px #000;
 }
 .joy {
-  position: absolute; left: 24px; bottom: 96px; width: 112px; height: 112px;
+  position: absolute; left: 12px; bottom: 72px; width: 84px; height: 84px;
   border-radius: 999px; border: 2px solid rgba(255,255,255,.3); background: rgba(255,255,255,.1);
   pointer-events: none;
 }
-.actions { position: absolute; right: 16px; bottom: 112px; display: flex; flex-direction: column; gap: 8px; }
+.actions { position: absolute; right: 8px; bottom: 72px; display: flex; flex-direction: column; gap: 6px; }
 .round {
-  width: 56px; height: 56px; border-radius: 999px; border: 0; font-weight: 800; font-size: 13px;
+  width: 46px; height: 46px; border-radius: 999px; border: 0; font-weight: 800; font-size: 11px;
   background: rgba(255,255,255,.2); color: white;
 }
-.jump { width: 64px; height: 64px; background: #10b981; font-size: 16px; }
+.jump { width: 52px; height: 52px; background: #10b981; font-size: 13px; }
 .pause {
   position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,.7);

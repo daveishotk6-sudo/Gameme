@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { buildChunkGeometry } from "./mesh";
+import { buildChunkGeometry, terrainMaterial } from "./mesh";
 import {
   AIR,
   BLOCKS,
@@ -69,11 +69,11 @@ export default function VoxelView({ seed, onExit }: Props) {
     sun.position.set(40, 60, 20);
     scene.add(sun);
 
-    const camera = new THREE.PerspectiveCamera(72, el.clientWidth / Math.max(1, el.clientHeight), 0.08, 120);
+    const camera = new THREE.PerspectiveCamera(84, el.clientWidth / Math.max(1, el.clientHeight), 0.08, 120);
     camera.up.set(0, 1, 0);
     camera.rotation.order = "YXZ";
 
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mat = terrainMaterial();
     const meshes = new Map<string, THREE.Mesh>();
     const dirty = new Set<string>();
 
@@ -203,13 +203,17 @@ export default function VoxelView({ seed, onExit }: Props) {
     canvas.addEventListener("touchend", onTouchEnd);
 
     const onResize = () => {
-      const w = el.clientWidth || 1;
-      const h = el.clientHeight || 1;
+      const vv = window.visualViewport;
+      const w = Math.max(1, Math.round(vv?.width ?? el.clientWidth));
+      const h = Math.max(1, Math.round(vv?.height ?? el.clientHeight));
+      el.style.height = `${h}px`;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    onResize();
 
     window.__controlsTest = {
       getYaw: () => yaw,
@@ -353,6 +357,7 @@ export default function VoxelView({ seed, onExit }: Props) {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
       canvas.removeEventListener("mousedown", onMouseDown);
       renderer.dispose();
       mat.dispose();
