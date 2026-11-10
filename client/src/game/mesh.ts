@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { AIR, BLOCKS, COBBLE, CS, DIRT, GRASS, LEAVES, SAND, STONE, WH, WOOD, type Chunk, type World } from "./world";
+import { AIR, BLOCKS, COBBLE, CS, DIRT, GLASS, GRASS, LEAVES, PLANKS, SAND, STONE, WATER, WH, WOOD, type Chunk, type World } from "./world";
 
 const TILE = 16;
-const COLS = 9;
+const COLS = 12;
 
 const FACES = [
   { d: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], s: 0.78, uv: (p: readonly number[]) => [p[2], p[1]] },
@@ -60,6 +60,9 @@ function drawAtlas() {
     const mortar = x % 8 === 0 || y % 8 === 0;
     return mix(mortar ? "#9e9e9e" : "#616161", 0.08, 13, x, y).getStyle();
   });
+  paintTile(ctx, 9, (x, y) => mix(y % 4 === 0 ? "#a67c52" : "#c4a574", 0.08, 14, x, y).getStyle());
+  paintTile(ctx, 10, (x, y) => mix(x === 2 || y === 12 ? "#e1f5fe" : "#81d4fa", 0.06, 15, x, y).getStyle());
+  paintTile(ctx, 11, (x, y) => mix(nse(x, y, 16) > 0.72 ? "#42a5f5" : "#1565c0", 0.12, 17, x, y).getStyle());
   return canvas;
 }
 
@@ -84,6 +87,9 @@ function tileOf(id: number, dy: number) {
   if (id === LEAVES) return 6;
   if (id === SAND) return 7;
   if (id === COBBLE) return 8;
+  if (id === PLANKS) return 9;
+  if (id === GLASS) return 10;
+  if (id === WATER) return 11;
   return 3;
 }
 
@@ -91,9 +97,10 @@ function solidAt(world: World, chunk: Chunk, cx: number, cz: number, x: number, 
   if (y < 0 || y >= WH) return false;
   if (x >= 0 && x < CS && z >= 0 && z < CS) {
     const id = chunk[x + z * CS + y * CS * CS] ?? AIR;
-    return id !== AIR && !!BLOCKS[id]?.solid;
+    return id !== AIR;
   }
-  return world.solid(cx * CS + x, y, cz * CS + z);
+  const outside = world.get(cx * CS + x, y, cz * CS + z);
+  return outside !== AIR;
 }
 
 export function buildChunkGeometry(world: World, cx: number, cz: number, chunk: Chunk) {

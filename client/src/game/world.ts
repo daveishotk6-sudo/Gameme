@@ -11,6 +11,10 @@ export const WOOD = 4;
 export const LEAVES = 5;
 export const SAND = 6;
 export const COBBLE = 7;
+export const PLANKS = 8;
+export const GLASS = 9;
+export const WATER = 10;
+export const SEA = 12;
 
 export const BLOCKS = [
   { id: AIR, name: "Air", color: "#000000", solid: false },
@@ -21,9 +25,19 @@ export const BLOCKS = [
   { id: LEAVES, name: "Leaves", color: "#2e7d32", solid: true },
   { id: SAND, name: "Sand", color: "#e6d3a1", solid: true },
   { id: COBBLE, name: "Cobble", color: "#757575", solid: true },
+  { id: PLANKS, name: "Planks", color: "#c4a574", solid: true },
+  { id: GLASS, name: "Glass", color: "#b3e5fc", solid: true },
+  { id: WATER, name: "Water", color: "#1565c0", solid: false },
 ] as const;
 
-export const HOTBAR = [GRASS, DIRT, STONE, WOOD, COBBLE, SAND, LEAVES];
+export const HOTBAR = [GRASS, DIRT, STONE, WOOD, PLANKS, COBBLE, SAND, GLASS];
+
+export const RECIPES = [
+  { name: "Planks", out: PLANKS, n: 4, need: [{ id: WOOD, n: 1 }] },
+  { name: "Wood", out: WOOD, n: 1, need: [{ id: PLANKS, n: 4 }] },
+  { name: "Glass", out: GLASS, n: 1, need: [{ id: SAND, n: 2 }] },
+  { name: "Cobble", out: COBBLE, n: 1, need: [{ id: STONE, n: 1 }] },
+] as const;
 
 const STRIDE = CS * CS * WH;
 
@@ -37,14 +51,38 @@ function idx(x: number, y: number, z: number) {
   return x + z * CS + y * CS * CS;
 }
 
-export function heightAt(x: number, z: number, seed: number) {
+function baseHeight(x: number, z: number, seed: number) {
   const sx = x + seed * 0.13;
   const sz = z + seed * 0.17;
   const v =
     Math.sin(sx * 0.07) * 3.2 +
     Math.cos(sz * 0.065) * 3.2 +
     Math.sin((sx + sz) * 0.03) * 2.4;
-  return Math.max(6, Math.min(WH - 8, Math.floor(v + 14)));
+  return Math.max(4, Math.min(WH - 8, Math.floor(v + 14)));
+}
+
+export function riverHere(x: number, z: number, seed: number) {
+  const center = Math.sin(z * 0.04 + seed * 0.01) * 26 + Math.sin(z * 0.012) * 5;
+  return Math.abs(x - center) < 2.3;
+}
+
+export function lakeHere(x: number, z: number, seed: number) {
+  const v = Math.sin(x * 0.085 + seed * 0.02) + Math.cos(z * 0.085) + Math.sin((x - z) * 0.055);
+  return v > 1.72;
+}
+
+export function heightAt(x: number, z: number, seed: number) {
+  let h = baseHeight(x, z, seed);
+  if (lakeHere(x, z, seed)) h = Math.min(h, SEA - 2);
+  if (riverHere(x, z, seed)) h = Math.min(h, SEA - 1);
+  return h;
+}
+
+function caveAt(x: number, y: number, z: number, seed: number) {
+  if (y < 2) return false;
+  const a = Math.sin(x * 0.34 + seed) * Math.sin(z * 0.31 + 1.7) * Math.sin(y * 0.46);
+  const b = Math.cos((x + z) * 0.19) * Math.sin(y * 0.28 + seed * 0.1);
+  return a + b > 1.08;
 }
 
 function fillChunk(cx: number, cz: number, seed: number): Chunk {
@@ -55,11 +93,16 @@ function fillChunk(cx: number, cz: number, seed: number): Chunk {
       const wz = cz * CS + z;
       const h = heightAt(wx, wz, seed);
       const desert = Math.sin(wx * 0.02 + seed) + Math.cos(wz * 0.02) < -0.85;
+      const beach = h <= SEA + 1;
       for (let y = 0; y <= h; y++) {
         let id = STONE;
-        if (y === h) id = desert ? SAND : GRASS;
-        else if (y > h - 3) id = desert ? SAND : DIRT;
+        if (y === h) id = beach || desert ? SAND : GRASS;
+        else if (y > h - 3) id = beach || desert ? SAND : DIRT;
+        else if (caveAt(wx, y, wz, seed) && y < h - 2) id = AIR;
         data[idx(x, y, z)] = id;
+      }
+      if (h < SEA) {
+        for (let y = h + 1; y <= SEA && y < WH; y++) data[idx(x, y, z)] = WATER;
       }
     }
   }
@@ -69,7 +112,7 @@ function fillChunk(cx: number, cz: number, seed: number): Chunk {
       const wz = cz * CS + z;
       if ((wx * 17 + wz * 31 + seed * 3) % 47 !== 0) continue;
       const h = heightAt(wx, wz, seed);
-      if (data[idx(x, h, z)] !== GRASS) continue;
+      if (h <= SEA || data[idx(x, h, z)] !== GRASS) continue;
       for (let t = 1; t <= 4; t++) data[idx(x, h + t, z)] = WOOD;
       for (let lx = -2; lx <= 2; lx++) {
         for (let lz = -2; lz <= 2; lz++) {

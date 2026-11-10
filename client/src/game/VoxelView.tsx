@@ -7,7 +7,9 @@ import {
   CS,
   EYE,
   HOTBAR,
+  RECIPES,
   VOID_Y,
+  WATER,
   World,
   heightAt,
   moveBody,
@@ -18,7 +20,7 @@ type Props = { seed: number; onExit: () => void };
 
 const emptyCounts = () => {
   const c: Record<number, number> = {};
-  for (const id of HOTBAR) c[id] = id === 1 || id === 2 || id === 3 ? 32 : 16;
+  for (const id of HOTBAR) c[id] = id === 1 || id === 2 || id === 3 ? 32 : id === 8 || id === 9 ? 0 : 16;
   return c;
 };
 
@@ -38,6 +40,7 @@ export default function VoxelView({ seed, onExit }: Props) {
   const [selected, setSelected] = useState(0);
   const [counts, setCounts] = useState(emptyCounts);
   const [paused, setPaused] = useState(false);
+  const [craft, setCraft] = useState(false);
   const selectedRef = useRef(0);
   const countsRef = useRef(counts);
   selectedRef.current = selected;
@@ -49,8 +52,11 @@ export default function VoxelView({ seed, onExit }: Props) {
     if (!el) return;
 
     const world = new World(seed);
-    const h0 = heightAt(8, 8, seed);
-    const pos = { x: 8.5, y: h0 + 1.05, z: 8.5 };
+    let sx = 8;
+    let sz = 8;
+    for (let i = 0; i < 48 && heightAt(sx, sz, seed) <= 13; i++) sx += 4;
+    const h0 = heightAt(sx, sz, seed);
+    const pos = { x: sx + 0.5, y: h0 + 1.05, z: sz + 0.5 };
     const vel = { x: 0, y: 0, z: 0 };
     let yaw = 0;
     let pitch = 0;
@@ -204,8 +210,15 @@ export default function VoxelView({ seed, onExit }: Props) {
 
     const onResize = () => {
       const vv = window.visualViewport;
+      const stage = el.parentElement;
       const w = Math.max(1, Math.round(vv?.width ?? el.clientWidth));
       const h = Math.max(1, Math.round(vv?.height ?? el.clientHeight));
+      if (stage && vv) {
+        stage.style.top = `${vv.offsetTop}px`;
+        stage.style.left = "0px";
+        stage.style.width = `${w}px`;
+        stage.style.height = `${h}px`;
+      }
       el.style.height = `${h}px`;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -213,6 +226,7 @@ export default function VoxelView({ seed, onExit }: Props) {
     };
     window.addEventListener("resize", onResize);
     window.visualViewport?.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("scroll", onResize);
     onResize();
 
     window.__controlsTest = {
@@ -273,18 +287,29 @@ export default function VoxelView({ seed, onExit }: Props) {
           vel.z = 0;
         }
 
-        vel.y += -28 * dt;
-        if (vel.y < -42) vel.y = -42;
+        const swimming =
+          world.get(Math.floor(pos.x), Math.floor(pos.y + 0.8), Math.floor(pos.z)) === WATER;
+        if (swimming) {
+          vel.x *= 0.62;
+          vel.z *= 0.62;
+          vel.y += -8 * dt;
+          vel.y += 20 * dt;
+          if (vel.y < -5) vel.y = -5;
+          if (vel.y > 3.2) vel.y = 3.2;
+        } else {
+          vel.y += -28 * dt;
+          if (vel.y < -42) vel.y = -42;
+        }
 
         const grounded = moveBody(world, pos, vel, dt);
-        if (grounded && (held("Space") || jumpHeld.current)) vel.y = 8.6;
+        if (swimming && (held("Space") || jumpHeld.current)) vel.y = 4.4;
+        else if (grounded && (held("Space") || jumpHeld.current)) vel.y = 8.6;
 
         // Deep void only — never snap players who are still on the map.
         if (pos.y < VOID_Y) {
-          const hy = heightAt(8, 8, seed);
-          pos.x = 8.5;
-          pos.y = hy + 4;
-          pos.z = 8.5;
+          pos.x = sx + 0.5;
+          pos.y = h0 + 4;
+          pos.z = sz + 0.5;
           vel.x = vel.y = vel.z = 0;
           syncChunks();
         }
@@ -358,6 +383,7 @@ export default function VoxelView({ seed, onExit }: Props) {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("resize", onResize);
       window.visualViewport?.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("scroll", onResize);
       canvas.removeEventListener("mousedown", onMouseDown);
       renderer.dispose();
       mat.dispose();
@@ -374,9 +400,14 @@ export default function VoxelView({ seed, onExit }: Props) {
 
       <div className="topbar">
         <div className="badge">Gameme</div>
-        <button data-hud type="button" className="menu-btn" onClick={() => setPaused(true)}>
-          Menu
-        </button>
+        <div className="top-actions">
+          <button data-hud type="button" className="menu-btn" onClick={() => setCraft(true)}>
+            Craft
+          </button>
+          <button data-hud type="button" className="menu-btn" onClick={() => setPaused(true)}>
+            Menu
+          </button>
+        </div>
       </div>
 
       <div className="hotbar">
@@ -442,6 +473,41 @@ export default function VoxelView({ seed, onExit }: Props) {
           Place
         </button>
       </div>
+
+      {craft && (
+        <div className="pause">
+          <div className="card">
+            <h2>Craft</h2>
+            <div className="craft-list">
+              {RECIPES.map((recipe, index) => (
+                <button
+                  key={recipe.name}
+                  type="button"
+                  className="recipe"
+                  onClick={() => {
+                    const next = { ...countsRef.current };
+                    for (const need of recipe.need) {
+                      if ((next[need.id] ?? 0) < need.n) return;
+                    }
+                    for (const need of recipe.need) next[need.id] = (next[need.id] ?? 0) - need.n;
+                    next[recipe.out] = (next[recipe.out] ?? 0) + recipe.n;
+                    countsRef.current = next;
+                    setCounts({ ...next });
+                  }}
+                >
+                  {recipe.n} {BLOCKS[recipe.out]?.name}
+                  <span>
+                    {recipe.need.map((need) => `${need.n} ${BLOCKS[need.id]?.name}`).join(" + ")}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="resume" onClick={() => setCraft(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {paused && (
         <div className="pause">
