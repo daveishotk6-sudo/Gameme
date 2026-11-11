@@ -90,9 +90,22 @@ button { font: inherit; color: inherit; }
   padding: 10px 12px; text-align: left; font-size: 14px; font-weight: 700;
 }
 .recipe span { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,.65); }
+.field { display: block; margin-top: 12px; text-align: left; font-size: 12px; color: rgba(255,255,255,.7); }
+.field input {
+  display: block; width: 100%; margin-top: 4px; border: 0; border-radius: 8px;
+  background: rgba(0,0,0,.4); color: white; padding: 10px 12px; font-size: 16px;
+}
+.chat {
+  position: absolute; left: 10px; width: min(46vw, 220px); pointer-events: auto; z-index: 5;
+  bottom: calc(176px + env(safe-area-inset-bottom, 0px));
+}
+.chat-log {
+  max-height: 72px; overflow: auto; font-size: 12px; line-height: 1.3;
+  background: rgba(0,0,0,.45); border-radius: 8px; padding: 6px 8px;
+}
+.chat-log p { margin: 0 0 3px; }
+.chat input {
+  width: 100%; margin-top: 4px; border: 0; border-radius: 8px; padding: 8px;
+  font-size: 16px; background: rgba(0,0,0,.55); color: white;
+}
 @media (min-width: 800px) { .joy { display: none; } }
-.note { color: rgba(255,255,255,.6); font-size: 12px; }
-.water-tint { position: absolute; inset: 0; background: rgba(30,80,200,.35); pointer-events: none; }
-.picker { max-width: 420px; }
-.picker .grid { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 6px; justify-content: center; }
-.picker .slot { width: 44px; height: 44px; }

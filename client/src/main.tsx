@@ -1,14 +1,19 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import VoxelView from "./game/VoxelView";
-import { loadSave } from "./game/save";
 import "./styles.css";
+
+function codeSeed(code: string) {
+  let s = 0;
+  for (const c of code) s = (Math.imul(s, 33) + c.charCodeAt(0)) >>> 0;
+  return (s % 90000) + 1000;
+}
 
 function Home() {
   const [playing, setPlaying] = useState(false);
-  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 99999));
-  const [resume, setResume] = useState(false);
-  const saved = loadSave();
+  const [seed, setSeed] = useState(42);
+  const [room, setRoom] = useState("hills");
+  const [name, setName] = useState("You");
 
   if (!playing) {
     return (
@@ -16,52 +21,44 @@ function Home() {
         <div className="card">
           <p className="kicker">VOXEL SANDBOX</p>
           <h1>GAMEME</h1>
-          <p>Explore oceans, deserts, snowy peaks and caves. Mine, build and swim. Your world saves automatically.</p>
-          {saved && (
-            <button
-              type="button"
-              className="play"
-              onClick={() => {
-                setSeed(saved.seed);
-                setResume(true);
-                setPlaying(true);
-              }}
-            >
-              Continue
-            </button>
-          )}
+          <p>Same room code is the same world. Friends show up as blue figures.</p>
+          <label className="field">
+            Your name
+            <input value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="field">
+            Room code
+            <input value={room} maxLength={16} onChange={(e) => setRoom(e.target.value)} />
+          </label>
           <button
             type="button"
-            className={saved ? "seed" : "play"}
+            className="play"
             onClick={() => {
-              setSeed(Math.floor(Math.random() * 99999));
-              setResume(false);
+              const code = room.trim() || "hills";
+              setRoom(code);
+              setSeed(codeSeed(code));
               setPlaying(true);
             }}
           >
-            New world
-          </button>
-          <button
-            type="button"
-            className="seed"
-            onClick={() => {
-              setSeed(42);
-              setResume(false);
-              setPlaying(true);
-            }}
-          >
-            Same world (seed 42)
+            Play
           </button>
           <ul className="help">
-            <li>Desktop: click to look, WASD, Space jump, left click mine, right click place</li>
-            <li>iPad: left stick move, right drag look, green Jump button</li>
+            <li>iPad: left side moves, right side looks, green Jump</li>
+            <li>Chat is at the lower left. Craft is next to Menu.</li>
           </ul>
         </div>
       </main>
     );
   }
 
-  return <VoxelView seed={seed} resume={resume} onExit={() => setPlaying(false)} />;
+  return (
+    <VoxelView
+      seed={seed}
+      room={room}
+      name={name.trim() || "You"}
+      onExit={() => setPlaying(false)}
+    />
+  );
 }
 
 createRoot(document.getElementById("root")!).render(
