@@ -1,0 +1,171 @@
+export const AIR = 0;
+export const GRASS = 1;
+export const DIRT = 2;
+export const STONE = 3;
+export const LOG = 4;
+export const LEAVES = 5;
+export const SAND = 6;
+export const COBBLE = 7;
+export const WATER = 8;
+export const PLANKS = 9;
+export const GLASS = 10;
+export const BRICK = 11;
+export const SNOW = 12;
+export const COAL_ORE = 13;
+export const IRON_ORE = 14;
+export const GOLD_ORE = 15;
+export const BASALT = 16;
+export const LANTERN = 17;
+export const WOOL = 18;
+export const CACTUS = 19;
+export const FLOWER_RED = 20;
+export const FLOWER_YELLOW = 21;
+export const TALL_GRASS = 22;
+export const GOLD_BLOCK = 23;
+export const PINE_LEAVES = 24;
+export const LAST_BLOCK = 24;
+
+// Non-block items
+export const COAL = 100;
+export const IRON = 101;
+export const GOLD = 102;
+export const STICK = 103;
+export const MEAT = 104;
+export const PICK_WOOD = 110;
+export const PICK_STONE = 111;
+export const PICK_IRON = 112;
+export const SWORD_WOOD = 113;
+export const SWORD_STONE = 114;
+export const SWORD_IRON = 115;
+
+export const TILE = 16;
+export const ATLAS_COLS = 8;
+export const ATLAS_ROWS = 4;
+
+export const T = {
+  GRASS_TOP: 0, GRASS_SIDE: 1, DIRT: 2, STONE: 3, LOG_SIDE: 4, LOG_TOP: 5, LEAVES: 6, SAND: 7,
+  COBBLE: 8, WATER: 9, PLANKS: 10, GLASS: 11, BRICK: 12, SNOW: 13, SNOW_SIDE: 14, COAL: 15,
+  IRON: 16, GOLD: 17, BASALT: 18, LANTERN: 19, WOOL: 20, CACTUS_SIDE: 21, CACTUS_TOP: 22,
+  FLOWER_RED: 23, FLOWER_YELLOW: 24, TALL_GRASS: 25, GOLD_BLOCK: 26, PINE_LEAVES: 27,
+} as const;
+
+export interface BlockDef {
+  id: number;
+  name: string;
+  color: string;
+  top: number;
+  bottom: number;
+  side: number;
+  solid: boolean; // collides
+  opaque: boolean; // hides neighbouring faces and blocks sky light
+  liquid: boolean;
+  cross: boolean; // plant drawn as two crossed quads
+  transparent: boolean; // drawn in the see-through pass
+  hardness: number; // seconds to break by hand
+  drop: number | null;
+  pick: boolean; // pickaxes speed this up
+  light: boolean;
+}
+
+const DEFS: BlockDef[] = [];
+
+function reg(id: number, name: string, color: string, tiles: number | [number, number, number], o: Partial<BlockDef> = {}) {
+  const [top, bottom, side] = typeof tiles === "number" ? [tiles, tiles, tiles] : tiles;
+  DEFS[id] = {
+    id, name, color, top, bottom, side,
+    solid: true, opaque: true, liquid: false, cross: false, transparent: false,
+    hardness: 1, drop: id, pick: false, light: false,
+    ...o,
+  };
+}
+
+reg(AIR, "Air", "#000000", 0, { solid: false, opaque: false, hardness: 0, drop: null });
+reg(GRASS, "Grass", "#5aa845", [T.GRASS_TOP, T.DIRT, T.GRASS_SIDE], { hardness: 0.7, drop: DIRT });
+reg(DIRT, "Dirt", "#8a5f3f", T.DIRT, { hardness: 0.6 });
+reg(STONE, "Stone", "#8c8c90", T.STONE, { hardness: 2.2, drop: COBBLE, pick: true });
+reg(LOG, "Log", "#6b4a2b", [T.LOG_TOP, T.LOG_TOP, T.LOG_SIDE], { hardness: 1.4 });
+reg(LEAVES, "Leaves", "#3e8e3a", T.LEAVES, { hardness: 0.25, drop: null });
+reg(SAND, "Sand", "#e2d29c", T.SAND, { hardness: 0.5 });
+reg(COBBLE, "Cobble", "#757579", T.COBBLE, { hardness: 2.2, pick: true });
+reg(WATER, "Water", "#2f6fd8", T.WATER, { solid: false, opaque: false, liquid: true, transparent: true, hardness: Infinity, drop: null });
+reg(PLANKS, "Planks", "#b88b52", T.PLANKS, { hardness: 1.1 });
+reg(GLASS, "Glass", "#bfe3ee", T.GLASS, { opaque: false, transparent: true, hardness: 0.35 });
+reg(BRICK, "Stone Brick", "#8a8a8e", T.BRICK, { hardness: 2.6, pick: true });
+reg(SNOW, "Snow", "#f2f7fb", [T.SNOW, T.DIRT, T.SNOW_SIDE], { hardness: 0.3 });
+reg(COAL_ORE, "Coal Ore", "#55555a", T.COAL, { hardness: 2.8, drop: COAL, pick: true });
+reg(IRON_ORE, "Iron Ore", "#b8977f", T.IRON, { hardness: 3.4, drop: IRON, pick: true });
+reg(GOLD_ORE, "Gold Ore", "#d9b83f", T.GOLD, { hardness: 3.6, drop: GOLD, pick: true });
+reg(BASALT, "Basalt", "#2d2f36", T.BASALT, { hardness: Infinity, drop: null });
+reg(LANTERN, "Lantern", "#ffd873", T.LANTERN, { hardness: 0.3, light: true });
+reg(WOOL, "Wool", "#ececec", T.WOOL, { hardness: 0.6 });
+reg(CACTUS, "Cactus", "#2f8f3d", [T.CACTUS_TOP, T.CACTUS_TOP, T.CACTUS_SIDE], { hardness: 0.5 });
+reg(FLOWER_RED, "Red Flower", "#d63a3a", T.FLOWER_RED, { solid: false, opaque: false, cross: true, hardness: 0 });
+reg(FLOWER_YELLOW, "Yellow Flower", "#f0c93a", T.FLOWER_YELLOW, { solid: false, opaque: false, cross: true, hardness: 0 });
+reg(TALL_GRASS, "Tall Grass", "#4f9a3a", T.TALL_GRASS, { solid: false, opaque: false, cross: true, hardness: 0 });
+reg(GOLD_BLOCK, "Gold Block", "#f2c744", T.GOLD_BLOCK, { hardness: 3, pick: true });
+reg(PINE_LEAVES, "Pine Needles", "#27603a", T.PINE_LEAVES, { hardness: 0.25, drop: null });
+
+export const BLOCKS = DEFS;
+export function block(id: number): BlockDef {
+  return DEFS[id] ?? DEFS[AIR]!;
+}
+export const isReplaceable = (id: number) => id === AIR || id === WATER || block(id).cross;
+
+// ---------------------------------------------------------------- items
+
+export interface ItemDef {
+  id: number;
+  name: string;
+  color: string;
+  kind: "block" | "material" | "pick" | "sword" | "food";
+  speed?: number;
+  dmg?: number;
+  heal?: number;
+}
+
+const ITEMS: Record<number, ItemDef> = {
+  [COAL]: { id: COAL, name: "Coal", color: "#2b2b2f", kind: "material" },
+  [IRON]: { id: IRON, name: "Iron", color: "#d9b9a0", kind: "material" },
+  [GOLD]: { id: GOLD, name: "Gold", color: "#f5d442", kind: "material" },
+  [STICK]: { id: STICK, name: "Stick", color: "#8a6a3c", kind: "material" },
+  [MEAT]: { id: MEAT, name: "Meat", color: "#c9574a", kind: "food", heal: 6 },
+  [PICK_WOOD]: { id: PICK_WOOD, name: "Wood Pickaxe", color: "#b88b52", kind: "pick", speed: 2.2 },
+  [PICK_STONE]: { id: PICK_STONE, name: "Stone Pickaxe", color: "#9a9aa0", kind: "pick", speed: 3.6 },
+  [PICK_IRON]: { id: PICK_IRON, name: "Iron Pickaxe", color: "#e6cdbb", kind: "pick", speed: 5.8 },
+  [SWORD_WOOD]: { id: SWORD_WOOD, name: "Wood Sword", color: "#b88b52", kind: "sword", dmg: 4 },
+  [SWORD_STONE]: { id: SWORD_STONE, name: "Stone Sword", color: "#9a9aa0", kind: "sword", dmg: 5 },
+  [SWORD_IRON]: { id: SWORD_IRON, name: "Iron Sword", color: "#e6cdbb", kind: "sword", dmg: 7 },
+};
+
+export function itemInfo(id: number): ItemDef {
+  const it = ITEMS[id];
+  if (it) return it;
+  const b = block(id);
+  return { id, name: b.name, color: b.color, kind: "block" };
+}
+
+export const CREATIVE_PALETTE: number[] = [];
+for (let i = 1; i <= LAST_BLOCK; i++) if (i !== WATER && i !== BASALT) CREATIVE_PALETTE.push(i);
+CREATIVE_PALETTE.push(COAL, IRON, GOLD, STICK, MEAT, PICK_WOOD, PICK_STONE, PICK_IRON, SWORD_WOOD, SWORD_STONE, SWORD_IRON);
+
+export interface Recipe {
+  out: [number, number];
+  inp: [number, number][];
+}
+
+export const RECIPES: Recipe[] = [
+  { out: [PLANKS, 4], inp: [[LOG, 1]] },
+  { out: [STICK, 4], inp: [[PLANKS, 2]] },
+  { out: [STONE, 1], inp: [[COBBLE, 1], [COAL, 1]] },
+  { out: [GLASS, 2], inp: [[SAND, 2], [COAL, 1]] },
+  { out: [BRICK, 4], inp: [[STONE, 4]] },
+  { out: [LANTERN, 1], inp: [[COAL, 1], [PLANKS, 1]] },
+  { out: [PICK_WOOD, 1], inp: [[PLANKS, 3], [STICK, 2]] },
+  { out: [PICK_STONE, 1], inp: [[COBBLE, 3], [STICK, 2]] },
+  { out: [PICK_IRON, 1], inp: [[IRON, 3], [STICK, 2]] },
+  { out: [SWORD_WOOD, 1], inp: [[PLANKS, 2], [STICK, 1]] },
+  { out: [SWORD_STONE, 1], inp: [[COBBLE, 2], [STICK, 1]] },
+  { out: [SWORD_IRON, 1], inp: [[IRON, 2], [STICK, 1]] },
+  { out: [GOLD_BLOCK, 1], inp: [[GOLD, 4]] },
+  { out: [WOOL, 1], inp: [[TALL_GRASS, 4]] },
+];

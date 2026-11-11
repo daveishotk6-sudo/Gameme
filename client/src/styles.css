@@ -91,3 +91,8 @@ button { font: inherit; color: inherit; }
 }
 .recipe span { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,.65); }
 @media (min-width: 800px) { .joy { display: none; } }
+.note { color: rgba(255,255,255,.6); font-size: 12px; }
+.water-tint { position: absolute; inset: 0; background: rgba(30,80,200,.35); pointer-events: none; }
+.picker { max-width: 420px; }
+.picker .grid { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 6px; justify-content: center; }
+.picker .slot { width: 44px; height: 44px; }
