@@ -3,6 +3,7 @@ import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE } from "./blocks";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
+import { DAY_MS, DAY_START } from "./daycycle";
 import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
 export interface HudState {
@@ -82,11 +83,13 @@ export class Engine {
   selected = 0;
   paused = false;
   rd: number;
-  clock = 0.3;
+  clock = DAY_START;
 
   typing = false;
   onLocalBlock?: (x: number, y: number, z: number, id: number) => void;
   onPose?: (p: { x: number; y: number; z: number; yaw: number }) => void;
+  /** Shared multiplayer time of day (0..1), or null when not synced (offline / still connecting). */
+  timeSource?: () => number | null;
   private remotes = new Map<number, Remote>();
   private poseT = 0;
   private raf = 0;
@@ -463,7 +466,14 @@ export class Engine {
 
   private update(dt: number) {
     const w = this.world;
-    this.clock += dt / 540;
+    this.clock += (dt * 1000) / DAY_MS;
+    const shared = this.timeSource?.();
+    if (shared != null) {
+      // Pull our clock toward the room's clock by the shortest way around the day.
+      let d = shared - (this.clock % 1);
+      d -= Math.round(d);
+      this.clock += Math.abs(d) > 0.02 ? d : d * Math.min(1, dt * 3);
+    }
     this.under = w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + EYE), Math.floor(this.pos.z)) === WATER;
     const k = this.keys;
     let mx = this.joy.x;

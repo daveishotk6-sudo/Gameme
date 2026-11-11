@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE } from "./blocks";
 import { loadSave } from "./save";
-import { connectPhoton, type PhotonLink } from "../net/photon";
+import { connectPhoton, type ChatStatus, type PhotonLink } from "../net/photon";
 
 type Props = { seed: number; room: string; name: string; onExit: () => void };
 
@@ -11,11 +11,14 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const engine = useRef<Engine | null>(null);
   const net = useRef<PhotonLink | null>(null);
   const chatDraft = useRef<HTMLInputElement>(null);
+  const chatLog = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<HudState | null>(null);
   const [picker, setPicker] = useState(false);
   const [chat, setChat] = useState<string[]>([]);
   const [online, setOnline] = useState(1);
   const [status, setStatus] = useState("Connecting");
+  const [chatStatus, setChatStatus] = useState<ChatStatus>("connecting");
+  const [chatNote, setChatNote] = useState("");
 
   useEffect(() => {
     const el = host.current;
@@ -29,6 +32,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     engine.current = e;
     e.onLocalBlock = (x, y, z, id) => net.current?.block(x, y, z, id);
     e.onPose = (p) => net.current?.move({ ...p, name });
+    // Day/night follows the room's shared server clock once connected.
+    e.timeSource = () => net.current?.time() ?? null;
 
     let link: PhotonLink | null = null;
     try {
@@ -38,6 +43,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
         onPos: (actor, pos) => e.setRemote(actor, pos),
         onLeave: (actor) => e.removeRemote(actor),
         onBlock: (x, y, z, id) => e.applyRemoteBlock(x, y, z, id),
+        onChatStatus: (s, detail) => { setChatStatus(s); setChatNote(detail ?? ""); },
         onChat: (from, text) => setChat((prev) => [...prev.slice(-7), `${from.replace(/-[a-z0-9]{5}$/, "")}: ${text}`]),
       });
     } catch {
@@ -51,6 +57,12 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
       engine.current = null;
     };
   }, [seed, room, name]);
+
+  // Keep the newest chat line in view (the log box is only a few lines tall).
+  useEffect(() => {
+    const el = chatLog.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chat, chatStatus]);
 
   const e = () => engine.current;
   const paused = hud?.paused ?? false;
@@ -115,14 +127,20 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           endTyping();
         }}
       >
-        <div className="chat-log">
-          {chat.length === 0 ? <p>Chat is live for this room. Press Enter to type.</p> : chat.map((line, i) => <p key={i}>{line}</p>)}
+        <div className="chat-log" ref={chatLog}>
+          {chat.length === 0 && chatStatus === "live" && <p>Chat is live for this room. Press Enter to type.</p>}
+          {chat.map((line, i) => <p key={i}>{line}</p>)}
+          {chatStatus !== "live" && (
+            <p className="chat-note">
+              {chatStatus === "error" ? `Chat offline: ${chatNote || "unknown error"}` : "Chat connecting…"}
+            </p>
+          )}
         </div>
         <input
           ref={chatDraft}
           data-hud
           maxLength={140}
-          placeholder="Message"
+          placeholder={chatStatus === "live" ? "Message" : "Message (sends when chat connects)"}
           enterKeyHint="send"
           onFocus={() => { if (engine.current) engine.current.typing = true; }}
           onBlur={() => { if (engine.current) engine.current.typing = false; }}

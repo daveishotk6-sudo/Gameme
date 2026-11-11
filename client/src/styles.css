@@ -104,6 +104,7 @@ button { font: inherit; color: inherit; }
   background: rgba(0,0,0,.45); border-radius: 8px; padding: 6px 8px;
 }
 .chat-log p { margin: 0 0 3px; }
+.chat-note { opacity: .7; font-style: italic; }
 .chat input {
   width: 100%; margin-top: 4px; border: 0; border-radius: 8px; padding: 8px;
   font-size: 16px; background: rgba(0,0,0,.55); color: white;
