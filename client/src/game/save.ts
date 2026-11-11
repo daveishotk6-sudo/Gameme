@@ -8,10 +8,10 @@ export interface SaveData {
   clock: number;
   edits: number[];
 }
-const KEY = "gameme:save:v1";
-export function loadSave(): SaveData | null {
+const KEY = (slot: string) => `gameme:save:v1:${slot}`;
+export function loadSave(slot: string): SaveData | null {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(KEY(slot));
     if (!raw) return null;
     const d = JSON.parse(raw) as SaveData;
     return d && d.v === 1 && typeof d.seed === "number" ? d : null;
@@ -19,16 +19,16 @@ export function loadSave(): SaveData | null {
     return null;
   }
 }
-export function writeSave(d: SaveData) {
+export function writeSave(d: SaveData, slot: string) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(d));
+    localStorage.setItem(KEY(slot), JSON.stringify(d));
   } catch {
     /* storage full or unavailable: skip silently */
   }
 }
-export function clearSave() {
+export function clearSave(slot: string) {
   try {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(KEY(slot));
   } catch {
     /* ignore */
   }

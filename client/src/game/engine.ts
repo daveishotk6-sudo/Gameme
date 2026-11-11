@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE } from "./blocks";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
+import { Sky } from "./sky";
 import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
 export interface HudState {
@@ -18,10 +19,37 @@ export interface EngineOpts {
   seed: number;
   save: SaveData | null;
   touch: boolean;
+  slot: string;
+  onChatKey?: () => void;
   onHud: (s: HudState) => void;
 }
 
 const HOTBAR_DEFAULT = [1, 2, 3, 4, 9, 10, 11, 17, 7];
+
+interface Remote {
+  group: THREE.Group;
+  tx: number; ty: number; tz: number; tyaw: number;
+  name: string;
+}
+
+function nameTag(name: string) {
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 48;
+  const g = c.getContext("2d")!;
+  g.font = "bold 28px sans-serif";
+  g.textAlign = "center";
+  g.fillStyle = "rgba(0,0,0,0.55)";
+  const w = Math.min(250, g.measureText(name).width + 22);
+  g.fillRect(128 - w / 2, 4, w, 40);
+  g.fillStyle = "#fff";
+  g.fillText(name.slice(0, 16), 128, 35);
+  const t = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  sp.scale.set(1.6, 0.3, 1);
+  sp.position.y = 2.1;
+  sp.renderOrder = 20;
+  return sp;
+}
 
 export class Engine {
   world: World;
@@ -31,6 +59,10 @@ export class Engine {
   mats = createTerrainMaterials();
   meshes = new Map<number, THREE.Mesh[]>();
   outline: THREE.LineSegments;
+  sky: Sky;
+  dayFactor = 1;
+  private elapsed = 0;
+  private under = false;
 
   pos = { x: 0, y: 40, z: 0 };
   vel = { x: 0, y: 0, z: 0 };
@@ -52,6 +84,11 @@ export class Engine {
   rd: number;
   clock = 0.3;
 
+  typing = false;
+  onLocalBlock?: (x: number, y: number, z: number, id: number) => void;
+  onPose?: (p: { x: number; y: number; z: number; yaw: number }) => void;
+  private remotes = new Map<number, Remote>();
+  private poseT = 0;
   private raf = 0;
   private last = performance.now();
   private dirty = new Set<number>();
@@ -95,6 +132,7 @@ export class Engine {
     this.outline.visible = false;
     this.scene.add(this.outline);
 
+    this.sky = new Sky(this.scene);
     this.applyFog();
     this.world.stream(this.pos.x, this.pos.z, this.rd + 1);
     // Don't spawn inside terrain after loading a save.
@@ -105,6 +143,50 @@ export class Engine {
   }
 
   // ------------------------------------------------------------ public
+
+  /** A block change that arrived from another player. */
+  applyRemoteBlock(x: number, y: number, z: number, id: number) {
+    this.world.set(x, y, z, id);
+    this.markEdit(x, z);
+  }
+
+  setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string }) {
+    let r = this.remotes.get(actor);
+    if (!r) {
+      const g = new THREE.Group();
+      const mat = (c: number) => new THREE.MeshBasicMaterial({ color: c });
+      const add = (w: number, h: number, d: number, c: number, x: number, y: number, z: number) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
+        m.position.set(x, y, z);
+        g.add(m);
+      };
+      add(0.5, 0.75, 0.28, 0x3b82f6, 0, 1.05, 0);
+      add(0.42, 0.42, 0.42, 0xf2c9a0, 0, 1.65, 0);
+      add(0.08, 0.08, 0.02, 0x222222, -0.1, 1.68, -0.22);
+      add(0.08, 0.08, 0.02, 0x222222, 0.1, 1.68, -0.22);
+      add(0.22, 0.68, 0.24, 0x1e40af, -0.13, 0.34, 0);
+      add(0.22, 0.68, 0.24, 0x1e40af, 0.13, 0.34, 0);
+      g.add(nameTag(p.name));
+      g.position.set(p.x, p.y, p.z);
+      this.scene.add(g);
+      r = { group: g, tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, name: p.name };
+      this.remotes.set(actor, r);
+    }
+    r.tx = p.x; r.ty = p.y; r.tz = p.z; r.tyaw = p.yaw;
+  }
+
+  removeRemote(actor: number) {
+    const r = this.remotes.get(actor);
+    if (!r) return;
+    this.scene.remove(r.group);
+    r.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      const mat = m.material as THREE.Material | undefined;
+      mat?.dispose();
+    });
+    this.remotes.delete(actor);
+  }
 
   select(i: number) {
     this.selected = ((i % 9) + 9) % 9;
@@ -127,17 +209,21 @@ export class Engine {
     if (!this.o.touch) this.renderer.domElement.requestPointerLock?.();
   }
   saveNow() {
-    writeSave({
+    writeSave(
+      {
       v: 1, seed: this.world.seed,
       pos: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, pitch: this.pitch,
       selected: this.selected, clock: this.clock, edits: this.world.dumpEdits(),
-    });
+      },
+      this.o.slot,
+    );
   }
   dispose() {
     cancelAnimationFrame(this.raf);
     this.saveNow();
     for (const c of this.cleanup) c();
     for (const k of [...this.meshes.keys()]) this.dropMesh(k);
+    for (const a of [...this.remotes.keys()]) this.removeRemote(a);
     this.mats.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -152,6 +238,16 @@ export class Engine {
       this.cleanup.push(() => window.removeEventListener(t, f as EventListener));
     };
     on("keydown", (e) => {
+      if ((e.target as HTMLElement | null)?.tagName === "INPUT") return;
+      if (e.code === "Enter" || e.code === "KeyT") {
+        e.preventDefault();
+        this.typing = true;
+        this.keys.clear();
+        this.mineHeld = false;
+        if (document.pointerLockElement) document.exitPointerLock();
+        this.o.onChatKey?.();
+        return;
+      }
       if (e.repeat) return;
       if (/^Digit[1-9]$/.test(e.code)) this.select(Number(e.code.slice(5)) - 1);
       else if (e.code === "KeyF") this.flying = !this.flying;
@@ -187,7 +283,7 @@ export class Engine {
     canvas.addEventListener("mousedown", down);
     this.cleanup.push(() => canvas.removeEventListener("mousedown", down));
     const lockChange = () => {
-      if (!this.o.touch && document.pointerLockElement !== canvas && !this.paused) this.setPaused(true);
+      if (!this.o.touch && document.pointerLockElement !== canvas && !this.paused && !this.typing) this.setPaused(true);
     };
     document.addEventListener("pointerlockchange", lockChange);
     this.cleanup.push(() => document.removeEventListener("pointerlockchange", lockChange));
@@ -246,9 +342,21 @@ export class Engine {
     this.camera.updateProjectionMatrix();
   }
 
+  private fogColor = new THREE.Color(0x87b7e8);
   private applyFog() {
     const far = this.rd * CS + 8;
-    this.mats.setFog(new THREE.Color(0x87b7e8), far * 0.55, far);
+    if (this.under) this.mats.setFog(new THREE.Color(0x1d4fa0), 2, 22);
+    else this.mats.setFog(this.fogColor, far * 0.55, far);
+  }
+
+  private updateSky(dt: number) {
+    this.elapsed += dt;
+    const st = this.sky.update(this.clock % 1, this.camera.position, this.elapsed);
+    this.dayFactor = st.day;
+    this.fogColor.copy(st.color);
+    (this.scene.background as THREE.Color).copy(this.under ? new THREE.Color(0x1d4fa0) : st.color);
+    this.mats.setSun(0.14 + 0.86 * st.day);
+    this.applyFog();
   }
 
   // ------------------------------------------------------------ chunks
@@ -329,6 +437,22 @@ export class Engine {
 
     this.camera.position.set(this.pos.x, this.pos.y + EYE, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.updateSky(dt);
+    const k2 = Math.min(1, dt * 10);
+    for (const r of this.remotes.values()) {
+      const g = r.group;
+      g.position.x += (r.tx - g.position.x) * k2;
+      g.position.y += (r.ty - g.position.y) * k2;
+      g.position.z += (r.tz - g.position.z) * k2;
+      let dy = r.tyaw - g.rotation.y;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      g.rotation.y += dy * k2;
+    }
+    this.poseT += dt;
+    if (this.poseT > 0.12) {
+      this.poseT = 0;
+      this.onPose?.({ x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw });
+    }
     this.renderer.render(this.scene, this.camera);
 
     this.hudT += dt;
@@ -339,6 +463,8 @@ export class Engine {
 
   private update(dt: number) {
     const w = this.world;
+    this.clock += dt / 540;
+    this.under = w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + EYE), Math.floor(this.pos.z)) === WATER;
     const k = this.keys;
     let mx = this.joy.x;
     let mz = this.joy.y;
@@ -446,6 +572,7 @@ export class Engine {
         if (!blocks) {
           w.set(px, py, pz, id);
           this.markEdit(px, pz);
+          this.onLocalBlock?.(px, py, pz, id);
           this.placeCd = 0.22;
         }
       }
@@ -456,8 +583,13 @@ export class Engine {
     const w = this.world;
     w.set(x, y, z, AIR);
     this.markEdit(x, z);
+    this.onLocalBlock?.(x, y, z, AIR);
     // Plants sitting on the removed block pop off.
-    if (block(w.get(x, y + 1, z)).cross) { w.set(x, y + 1, z, AIR); this.markEdit(x, z); }
+    if (block(w.get(x, y + 1, z)).cross) {
+      w.set(x, y + 1, z, AIR);
+      this.markEdit(x, z);
+      this.onLocalBlock?.(x, y + 1, z, AIR);
+    }
   }
 }
 

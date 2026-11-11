@@ -44,7 +44,7 @@ function Home() {
           </button>
           <ul className="help">
             <li>iPad: left side moves, right side looks, green Jump</li>
-            <li>Chat is at the lower left. Craft is next to Menu.</li>
+            <li>Chat is at the lower left (press Enter on a keyboard). Your room saves on this device.</li>
           </ul>
         </div>
       </main>
