@@ -143,7 +143,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             data-hud
             key={i}
             type="button"
-            onClick={() => {
+            onClick={() => e()?.select(i)}
+            onDoubleClick={() => {
               e()?.select(i);
               setEditSlot(i);
               setPicker(true);
