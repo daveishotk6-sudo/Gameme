@@ -21,9 +21,9 @@ export interface Mob {
 }
 
 const KIND: Record<MobKind, { hp: number; speed: number; drop: number; scale: number; color: number; accent: number }> = {
-  pig:     { hp: 8,  speed: 2.4, drop: RAW_PORK,    scale: 0.85, color: 0xffb6c1, accent: 0xff7a8a },
-  cow:     { hp: 14, speed: 2.0, drop: RAW_BEEF,    scale: 1.15, color: 0x6b4a36, accent: 0xf5f5f5 },
-  chicken: { hp: 5,  speed: 3.2, drop: RAW_CHICKEN, scale: 0.55, color: 0xfff8e7, accent: 0xffb020 },
+  pig:     { hp: 8,  speed: 2.4, drop: RAW_PORK,    scale: 0.78, color: 0xffb0bc, accent: 0xff7a8a },
+  cow:     { hp: 14, speed: 2.0, drop: RAW_BEEF,    scale: 1.05, color: 0x6b4a36, accent: 0xf5f5f5 },
+  chicken: { hp: 5,  speed: 3.2, drop: RAW_CHICKEN, scale: 0.62, color: 0xfff8e7, accent: 0xffb020 },
 };
 
 let nextId = 1;
@@ -53,36 +53,32 @@ function buildPig(s: number, color: number, accent: number): THREE.Group {
   const g = new THREE.Group();
   const bodyC = color;
   const dark = shade(color, -0.18);
-  const light = shade(color, 0.12);
+  const light = shade(color, 0.1);
   const snoutC = accent;
-  const hoof = shade(accent, -0.25);
+  const hoof = shade(accent, -0.3);
 
-  // Torso + belly
-  g.add(part(0.95 * s, 0.52 * s, 0.62 * s, bodyC, 0, 0.48 * s, 0));
-  g.add(part(0.82 * s, 0.18 * s, 0.5 * s, light, 0, 0.28 * s, 0)); // belly
+  // Slimmer, longer body (less barrel)
+  g.add(part(1.05 * s, 0.42 * s, 0.48 * s, bodyC, 0, 0.44 * s, 0));
+  g.add(part(0.9 * s, 0.12 * s, 0.4 * s, light, 0, 0.26 * s, 0));
 
-  // Head
-  g.add(part(0.42 * s, 0.4 * s, 0.42 * s, bodyC, 0, 0.58 * s, 0.48 * s));
-  // Snout
-  g.add(part(0.26 * s, 0.2 * s, 0.22 * s, snoutC, 0, 0.5 * s, 0.7 * s));
-  // Nostrils
-  g.add(part(0.05 * s, 0.05 * s, 0.04 * s, dark, -0.06 * s, 0.52 * s, 0.82 * s));
-  g.add(part(0.05 * s, 0.05 * s, 0.04 * s, dark, 0.06 * s, 0.52 * s, 0.82 * s));
-  // Eyes
-  g.add(part(0.07 * s, 0.07 * s, 0.04 * s, 0x1a1a1a, -0.12 * s, 0.68 * s, 0.68 * s));
-  g.add(part(0.07 * s, 0.07 * s, 0.04 * s, 0x1a1a1a, 0.12 * s, 0.68 * s, 0.68 * s));
-  g.add(part(0.03 * s, 0.03 * s, 0.02 * s, 0xffffff, -0.11 * s, 0.7 * s, 0.7 * s));
-  g.add(part(0.03 * s, 0.03 * s, 0.02 * s, 0xffffff, 0.13 * s, 0.7 * s, 0.7 * s));
-  // Ears
-  g.add(part(0.14 * s, 0.12 * s, 0.06 * s, dark, -0.2 * s, 0.78 * s, 0.4 * s));
-  g.add(part(0.14 * s, 0.12 * s, 0.06 * s, dark, 0.2 * s, 0.78 * s, 0.4 * s));
-  // Legs
-  for (const [lx, lz] of [[-0.28, 0.2], [0.28, 0.2], [-0.28, -0.22], [0.28, -0.22]] as const) {
-    g.add(part(0.16 * s, 0.32 * s, 0.16 * s, bodyC, lx * s, 0.16 * s, lz * s));
-    g.add(part(0.16 * s, 0.08 * s, 0.16 * s, hoof, lx * s, 0.04 * s, lz * s));
+  // Head slightly smaller / higher
+  g.add(part(0.36 * s, 0.34 * s, 0.36 * s, bodyC, 0, 0.52 * s, 0.52 * s));
+  g.add(part(0.22 * s, 0.16 * s, 0.18 * s, snoutC, 0, 0.46 * s, 0.72 * s));
+  g.add(part(0.04 * s, 0.04 * s, 0.03 * s, dark, -0.05 * s, 0.48 * s, 0.82 * s));
+  g.add(part(0.04 * s, 0.04 * s, 0.03 * s, dark, 0.05 * s, 0.48 * s, 0.82 * s));
+  g.add(part(0.06 * s, 0.06 * s, 0.03 * s, 0x1a1a1a, -0.1 * s, 0.6 * s, 0.68 * s));
+  g.add(part(0.06 * s, 0.06 * s, 0.03 * s, 0x1a1a1a, 0.1 * s, 0.6 * s, 0.68 * s));
+  g.add(part(0.025 * s, 0.025 * s, 0.02 * s, 0xffffff, -0.09 * s, 0.62 * s, 0.7 * s));
+  g.add(part(0.025 * s, 0.025 * s, 0.02 * s, 0xffffff, 0.11 * s, 0.62 * s, 0.7 * s));
+  // Floppy ears
+  g.add(part(0.12 * s, 0.1 * s, 0.05 * s, dark, -0.18 * s, 0.7 * s, 0.42 * s));
+  g.add(part(0.12 * s, 0.1 * s, 0.05 * s, dark, 0.18 * s, 0.7 * s, 0.42 * s));
+  // Longer legs
+  for (const [lx, lz] of [[-0.22, 0.16], [0.22, 0.16], [-0.22, -0.18], [0.22, -0.18]] as const) {
+    g.add(part(0.12 * s, 0.36 * s, 0.12 * s, bodyC, lx * s, 0.18 * s, lz * s));
+    g.add(part(0.12 * s, 0.06 * s, 0.12 * s, hoof, lx * s, 0.03 * s, lz * s));
   }
-  // Tiny curly tail stub
-  g.add(part(0.08 * s, 0.08 * s, 0.12 * s, accent, 0, 0.55 * s, -0.38 * s));
+  g.add(part(0.06 * s, 0.06 * s, 0.14 * s, accent, 0, 0.48 * s, -0.4 * s));
   return g;
 }
 
@@ -293,11 +289,9 @@ export function hitMob(m: Mob, dmg: number): boolean {
  * Spawn animals near a point. Very dense by default so the world feels populated.
  * Forces chunks under each candidate so solid() works even at the edge of the stream.
  */
-export function spawnHerd(world: World, origin: { x: number; y: number; z: number }, count = 2): Mob[] {
-  const kinds: MobKind[] = [
-    "pig", "pig", "pig", "cow", "cow", "cow",
-    "chicken", "chicken", "chicken", "chicken", "pig", "chicken",
-  ];
+export function spawnHerd(world: World, origin: { x: number; y: number; z: number }, count = 6): Mob[] {
+  // Round-robin so small herds still get cows + chickens, not only pigs.
+  const kinds: MobKind[] = ["cow", "chicken", "pig", "cow", "chicken", "pig"];
   const out: Mob[] = [];
   for (let i = 0; i < count; i++) {
     const kind = kinds[i % kinds.length]!;
@@ -335,7 +329,7 @@ export function topUpMobs(
   world: World,
   existing: Mob[],
   origin: { x: number; y: number; z: number },
-  target = 2,
+  target = 6,
 ): Mob[] {
   const nearby = existing.filter((m) => {
     if (m.dead) return false;

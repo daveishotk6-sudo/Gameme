@@ -58,6 +58,17 @@ export const PICK_IRON = 112;
 export const SWORD_WOOD = 113;
 export const SWORD_STONE = 114;
 export const SWORD_IRON = 115;
+export const PICK_GOLD = 117;
+export const SWORD_GOLD = 118;
+export const PICK_OBSIDIAN = 119;
+export const SWORD_OBSIDIAN = 120;
+export const AXE_WOOD = 121;
+export const AXE_STONE = 122;
+export const AXE_IRON = 123;
+export const SHOVEL_WOOD = 124;
+export const SHOVEL_STONE = 125;
+export const SHOVEL_IRON = 126;
+export const BOW = 127;
 
 export const TILE = 16;
 export const ATLAS_COLS = 8;
@@ -159,7 +170,7 @@ export interface ItemDef {
   id: number;
   name: string;
   color: string;
-  kind: "block" | "material" | "pick" | "sword" | "food";
+  kind: "block" | "material" | "pick" | "sword" | "axe" | "shovel" | "bow" | "food";
   speed?: number;
   dmg?: number;
   heal?: number;
@@ -183,6 +194,17 @@ const ITEMS: Record<number, ItemDef> = {
   [SWORD_WOOD]: { id: SWORD_WOOD, name: "Wood Sword", color: "#b88b52", kind: "sword", dmg: 4 },
   [SWORD_STONE]: { id: SWORD_STONE, name: "Stone Sword", color: "#9a9aa0", kind: "sword", dmg: 5 },
   [SWORD_IRON]: { id: SWORD_IRON, name: "Iron Sword", color: "#e6cdbb", kind: "sword", dmg: 7 },
+  [PICK_GOLD]: { id: PICK_GOLD, name: "Gold Pickaxe", color: "#f5d442", kind: "pick", speed: 7.5 },
+  [SWORD_GOLD]: { id: SWORD_GOLD, name: "Gold Sword", color: "#f5d442", kind: "sword", dmg: 5 },
+  [PICK_OBSIDIAN]: { id: PICK_OBSIDIAN, name: "Obsidian Pickaxe", color: "#4a2080", kind: "pick", speed: 9.0 },
+  [SWORD_OBSIDIAN]: { id: SWORD_OBSIDIAN, name: "Obsidian Sword", color: "#4a2080", kind: "sword", dmg: 10 },
+  [AXE_WOOD]: { id: AXE_WOOD, name: "Wood Axe", color: "#b88b52", kind: "axe", speed: 2.5, dmg: 3 },
+  [AXE_STONE]: { id: AXE_STONE, name: "Stone Axe", color: "#9a9aa0", kind: "axe", speed: 4.0, dmg: 4 },
+  [AXE_IRON]: { id: AXE_IRON, name: "Iron Axe", color: "#e6cdbb", kind: "axe", speed: 6.0, dmg: 6 },
+  [SHOVEL_WOOD]: { id: SHOVEL_WOOD, name: "Wood Shovel", color: "#b88b52", kind: "shovel", speed: 2.5 },
+  [SHOVEL_STONE]: { id: SHOVEL_STONE, name: "Stone Shovel", color: "#9a9aa0", kind: "shovel", speed: 4.0 },
+  [SHOVEL_IRON]: { id: SHOVEL_IRON, name: "Iron Shovel", color: "#e6cdbb", kind: "shovel", speed: 6.0 },
+  [BOW]: { id: BOW, name: "Bow", color: "#8a6a3c", kind: "bow", dmg: 6 },
 };
 
 /** Raw food that a furnace can cook, and what it becomes. */
@@ -205,7 +227,11 @@ for (let i = 1; i <= LAST_BLOCK; i++) if (i !== WATER && i !== BASALT) CREATIVE_
 CREATIVE_PALETTE.push(
   COAL, IRON, GOLD, STICK,
   MEAT, RAW_PORK, COOKED_PORK, RAW_BEEF, COOKED_BEEF, RAW_CHICKEN, COOKED_CHICKEN,
-  PICK_WOOD, PICK_STONE, PICK_IRON, SWORD_WOOD, SWORD_STONE, SWORD_IRON,
+  PICK_WOOD, PICK_STONE, PICK_IRON, PICK_GOLD, PICK_OBSIDIAN,
+  SWORD_WOOD, SWORD_STONE, SWORD_IRON, SWORD_GOLD, SWORD_OBSIDIAN,
+  AXE_WOOD, AXE_STONE, AXE_IRON,
+  SHOVEL_WOOD, SHOVEL_STONE, SHOVEL_IRON,
+  BOW,
 );
 
 export interface Recipe {
@@ -226,6 +252,17 @@ export const RECIPES: Recipe[] = [
   { out: [SWORD_WOOD, 1], inp: [[PLANKS, 2], [STICK, 1]] },
   { out: [SWORD_STONE, 1], inp: [[COBBLE, 2], [STICK, 1]] },
   { out: [SWORD_IRON, 1], inp: [[IRON, 2], [STICK, 1]] },
+  { out: [PICK_GOLD, 1], inp: [[GOLD, 3], [STICK, 2]] },
+  { out: [SWORD_GOLD, 1], inp: [[GOLD, 2], [STICK, 1]] },
+  { out: [PICK_OBSIDIAN, 1], inp: [[OBSIDIAN, 3], [STICK, 2]] },
+  { out: [SWORD_OBSIDIAN, 1], inp: [[OBSIDIAN, 2], [STICK, 1]] },
+  { out: [AXE_WOOD, 1], inp: [[PLANKS, 3], [STICK, 2]] },
+  { out: [AXE_STONE, 1], inp: [[COBBLE, 3], [STICK, 2]] },
+  { out: [AXE_IRON, 1], inp: [[IRON, 3], [STICK, 2]] },
+  { out: [SHOVEL_WOOD, 1], inp: [[PLANKS, 1], [STICK, 2]] },
+  { out: [SHOVEL_STONE, 1], inp: [[COBBLE, 1], [STICK, 2]] },
+  { out: [SHOVEL_IRON, 1], inp: [[IRON, 1], [STICK, 2]] },
+  { out: [BOW, 1], inp: [[STICK, 3], [TALL_GRASS, 3]] },
   { out: [GOLD_BLOCK, 1], inp: [[GOLD, 4]] },
   { out: [WOOL, 1], inp: [[TALL_GRASS, 4]] },
   { out: [FURNACE, 1], inp: [[COBBLE, 8]] },

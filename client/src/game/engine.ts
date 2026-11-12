@@ -178,7 +178,7 @@ export class Engine {
     for (let i = 0; i < 64 && overlaps(this.world, this.pos.x, this.pos.y, this.pos.z); i++) this.pos.y += 1;
     this.syncChunks(true);
     // Dense passive animals near the player so they're visible immediately.
-    this.mobs = spawnHerd(this.world, this.pos, 2);
+    this.mobs = spawnHerd(this.world, this.pos, 6);
     for (const m of this.mobs) this.scene.add(m.group);
     this.mobTopUpT = 0;
     this.bindInput(host);
@@ -929,7 +929,7 @@ export class Engine {
     this.vel.x = this.vel.y = this.vel.z = 0;
     this.syncChunks(true);
     if (dim === 0) {
-      this.mobs = spawnHerd(this.world, this.pos, 2);
+      this.mobs = spawnHerd(this.world, this.pos, 6);
       for (const m of this.mobs) this.scene.add(m.group);
     }
     this.smeltMsg = dim === -1 ? "The Nether" : "Overworld";
@@ -955,7 +955,7 @@ export class Engine {
     this.mobTopUpT -= dt;
     if (this.mobTopUpT <= 0) {
       this.mobTopUpT = 4;
-      const added = topUpMobs(this.world, this.mobs, this.pos, 2);
+      const added = topUpMobs(this.world, this.mobs, this.pos, 6);
       for (const m of added) {
         this.scene.add(m.group);
         this.mobs.push(m);
@@ -1029,7 +1029,9 @@ export class Engine {
       this.fx.swingOnce();
       const held = this.hotbar[this.selected] ?? 0;
       const info = itemInfo(held);
-      const dmg = info.kind === "sword" ? (info.dmg ?? 4) : 2;
+      const dmg = (info.kind === "sword" || info.kind === "axe" || info.kind === "bow")
+        ? (info.dmg ?? 4)
+        : 2;
       const died = hitMob(aimedMob, dmg);
       sfx.hurt();
       this.mineCd = 0.35;
@@ -1049,16 +1051,25 @@ export class Engine {
       const tk = `${hit.x},${hit.y},${hit.z}`;
       if (tk !== this.mineKey) { this.mineKey = tk; this.mineProgress = 0; }
       if (def.hardness !== Infinity) {
+        const held = this.hotbar[this.selected] ?? 0;
+        const tool = itemInfo(held);
+        let need = def.hardness;
+        // Tool speed shortens break time (creative still feels snappy)
+        if (tool.speed && (tool.kind === "pick" || tool.kind === "axe" || tool.kind === "shovel")) {
+          need = Math.max(0.08, def.hardness / tool.speed);
+        } else {
+          need = Math.min(def.hardness, 0.45);
+        }
         this.mineProgress += dt;
         this.mineSfxT -= dt;
         this.fxMining = true;
-        this.fxProgress = Math.min(1, this.mineProgress / Math.min(def.hardness, 0.35));
+        this.fxProgress = Math.min(1, this.mineProgress / need);
         if (this.mineSfxT <= 0) {
           this.mineSfxT = 0.2;
           sfx.block(id, "hit");
           this.fx.burst(hit.x + hit.faceX * 0.45, hit.y + hit.faceY * 0.45, hit.z + hit.faceZ * 0.45, id, 2, 1.6);
         }
-        if (this.mineProgress >= Math.min(def.hardness, 0.35) && this.mineCd <= 0) {
+        if (this.mineProgress >= need && this.mineCd <= 0) {
           this.breakBlock(hit.x, hit.y, hit.z);
           this.mineProgress = 0;
           this.mineCd = 0.18;
