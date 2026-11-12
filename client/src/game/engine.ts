@@ -3,6 +3,7 @@ import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE } from "./blocks";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
+import { sfx, materialOf } from "./audio";
 import { DAY_MS, DAY_START } from "./daycycle";
 import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
@@ -17,6 +18,7 @@ export interface HudState {
   air: number;
   hurt: number;
   dead: boolean;
+  flying: boolean;
 }
 
 export interface EngineOpts {
@@ -114,6 +116,8 @@ export class Engine {
   mineHeld = false;
   placeHeld = false;
   placeQueued = false;
+  /** Touch "Down" button: descend while flying. */
+  descendHeld = false;
 
   hotbar = [...HOTBAR_DEFAULT];
   selected = 0;
@@ -150,6 +154,12 @@ export class Engine {
   private saveT = 0;
   private hudT = 0;
   private lastJump = 0;
+  private flyGrace = 0;
+  private flyLift = 0;
+  private stepDist = 0;
+  private mineSfxT = 0;
+  private wasInWater = false;
+  private t0 = performance.now();
   private spawn: { x: number; y: number; z: number };
   private cleanup: (() => void)[] = [];
 
@@ -195,6 +205,13 @@ export class Engine {
 
   /** A block change that arrived from another player. */
   applyRemoteBlock(x: number, y: number, z: number, id: number) {
+    const old = this.world.get(x, y, z);
+    // Quiet, distance-faded sound for other players' edits (skipped while the room's block history replays on join).
+    if (old !== id && performance.now() - this.t0 > 3000) {
+      const d = Math.hypot(x + 0.5 - this.pos.x, y - this.pos.y - 1, z + 0.5 - this.pos.z);
+      const vol = Math.max(0, 1 - d / 28) * 0.7;
+      if (vol > 0.03) sfx.block(id === AIR ? old : id, id === AIR ? "break" : "place", vol);
+    }
     this.world.set(x, y, z, id);
     this.markEdit(x, z);
   }
@@ -263,7 +280,33 @@ export class Engine {
 
   select(i: number) {
     this.selected = ((i % 9) + 9) % 9;
+    sfx.click();
     this.emit();
+  }
+
+  /** Turn fly mode on/off. Turning it on gives a short takeoff hop (about a block) so it's obvious it worked. */
+  setFly(on: boolean) {
+    if (on === this.flying || this.dead) return;
+    this.flying = on;
+    if (on) {
+      this.flyLift = 5;
+      this.grounded = false;
+      this.flyGrace = 0.4; // don't let ground contact right at takeoff switch it straight back off
+    } else {
+      this.flyLift = 0;
+      this.descendHeld = false;
+    }
+    sfx.fly(on);
+    this.emit();
+  }
+  toggleFly() {
+    this.setFly(!this.flying);
+  }
+  /** Jump pressed (key or touch button). Pressing twice quickly toggles fly mode. */
+  jumpPress() {
+    const now = performance.now();
+    if (now - this.lastJump < 280) this.toggleFly();
+    this.lastJump = now;
   }
   setHotbar(slot: number, id: number) {
     this.hotbar[slot] = id;
@@ -274,8 +317,12 @@ export class Engine {
     this.health = Math.max(0, this.health - n);
     this.hurt++;
     this.hurtCd = 0;
+    if (this.health > 0) sfx.hurt();
     if (this.health <= 0) {
+      sfx.death();
       this.dead = true;
+      this.flying = false;
+      this.descendHeld = false;
       this.mineHeld = false;
       this.placeHeld = false;
       this.keys.clear();
@@ -298,6 +345,7 @@ export class Engine {
     this.lastChunk = "";
     this.syncChunks(true);
     this.lockPointer();
+    sfx.respawn();
     this.emit();
   }
 
@@ -306,6 +354,8 @@ export class Engine {
     if (p) {
       this.mineHeld = false;
       this.placeHeld = false;
+      this.descendHeld = false;
+      sfx.wind(0);
       if (document.pointerLockElement) document.exitPointerLock();
     }
     this.emit();
@@ -348,17 +398,19 @@ export class Engine {
       if ((e.target as HTMLElement | null)?.tagName === "INPUT") return;
       if (e.repeat) return;
       if (/^Digit[1-9]$/.test(e.code)) this.select(Number(e.code.slice(5)) - 1);
-      else if (e.code === "KeyF") this.flying = !this.flying;
-      else if (e.code === "Space") {
-        const now = performance.now();
-        if (now - this.lastJump < 280) this.flying = !this.flying;
-        this.lastJump = now;
-      }
+      else if (e.code === "KeyF") this.toggleFly();
+      else if (e.code === "Space") this.jumpPress();
       if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);
     });
     on("keyup", (e) => this.keys.delete(e.code));
-    on("blur", () => { this.keys.clear(); this.mineHeld = false; this.placeHeld = false; });
+    on("blur", () => { this.keys.clear(); this.mineHeld = false; this.placeHeld = false; this.descendHeld = false; });
+    // Browsers only allow audio after a user gesture, so any of these switches sound on.
+    const unlock = () => sfx.unlock();
+    on("pointerup", unlock);
+    on("touchend", unlock);
+    on("click", unlock);
+    on("keydown", unlock);
     on("mousemove", (e) => {
       if (document.pointerLockElement !== canvas || this.paused) return;
       this.yaw -= e.movementX * 0.0022;
@@ -521,6 +573,7 @@ export class Engine {
       air: Math.max(0, Math.ceil(this.air)),
       hurt: this.hurt,
       dead: this.dead,
+      flying: this.flying,
     });
   }
 
@@ -597,8 +650,11 @@ export class Engine {
     this.vel.z += (tz - this.vel.z) * a;
 
     const jump = k.has("Space") || this.jumpHeld;
+    const vyBefore = this.vel.y;
+    this.flyGrace = Math.max(0, this.flyGrace - dt);
     if (this.flying) {
-      this.vel.y = (jump ? 7 : 0) - (k.has("ShiftLeft") ? 7 : 0);
+      this.flyLift *= Math.max(0, 1 - dt * 4);
+      this.vel.y = (jump ? 7 : 0) - (k.has("ShiftLeft") || this.descendHeld ? 7 : 0) + this.flyLift;
     } else if (inWater) {
       this.vel.y -= 9 * dt;
       this.vel.y = Math.max(-3, this.vel.y);
@@ -611,8 +667,25 @@ export class Engine {
       this.vel.y = Math.max(-45, this.vel.y);
     }
     this.grounded = moveBody(w, this.pos, this.vel, dt);
-    if (this.grounded && jump && !this.flying) { this.vel.y = 8.6; this.grounded = false; }
-    if (this.grounded && this.flying) this.flying = false;
+    if (this.grounded && jump && !this.flying) { this.vel.y = 8.6; this.grounded = false; sfx.jump(); }
+    if (this.grounded && this.flying && this.flyGrace <= 0) this.setFly(false);
+
+    // Sounds: wind, splashes and footsteps.
+    const hs = Math.hypot(this.vel.x, this.vel.z);
+    const speedNow = Math.hypot(this.vel.x, this.vel.y, this.vel.z);
+    sfx.wind(this.flying ? Math.min(1, speedNow / 13) : this.vel.y < -14 ? Math.min(0.9, (-this.vel.y - 12) / 25) : 0);
+    if (inWater !== this.wasInWater) {
+      this.wasInWater = inWater;
+      if (this.elapsed > 1) sfx.splash(Math.min(1, Math.abs(vyBefore) / 12 + 0.25));
+    }
+    const below = materialOf(w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.2), Math.floor(this.pos.z)));
+    if (this.grounded && !this.flying && !inWater && hs > 0.8) {
+      this.stepDist += hs * dt;
+      if (this.stepDist > 2.3) { this.stepDist = 0; sfx.step(below, sprint); }
+    } else if (inWater && hs > 0.8) {
+      this.stepDist += hs * dt;
+      if (this.stepDist > 1.8) { this.stepDist = 0; sfx.swim(); }
+    } else if (!this.grounded) this.stepDist = 1.4;
 
     // Fall damage: measured from the highest point of the current fall.
     if (this.flying || inWater) {
@@ -621,6 +694,7 @@ export class Engine {
     } else if (this.grounded) {
       if (this.airborne) {
         const fall = this.peakY - this.pos.y;
+        if (fall > 0.9) sfx.land(fall, below);
         if (fall > 3.2) this.damage(Math.floor(fall - 3));
       }
       this.airborne = false;
@@ -635,7 +709,7 @@ export class Engine {
       this.airT += dt;
       if (this.airT >= 1) {
         this.airT = 0;
-        if (this.air > 0) this.air -= 1;
+        if (this.air > 0) { this.air -= 1; sfx.bubble(); }
         else this.damage(2);
       }
     } else {
@@ -695,6 +769,8 @@ export class Engine {
       if (tk !== this.mineKey) { this.mineKey = tk; this.mineProgress = 0; }
       if (def.hardness !== Infinity) {
         this.mineProgress += dt;
+        this.mineSfxT -= dt;
+        if (this.mineSfxT <= 0) { this.mineSfxT = 0.2; sfx.block(id, "hit"); }
         if (this.mineProgress >= Math.min(def.hardness, 0.35) && this.mineCd <= 0) {
           this.breakBlock(hit.x, hit.y, hit.z);
           this.mineProgress = 0;
@@ -719,6 +795,7 @@ export class Engine {
         if (!blocks) {
           w.set(px, py, pz, id);
           this.markEdit(px, pz);
+          sfx.block(id, "place");
           this.onLocalBlock?.(px, py, pz, id);
           this.placeCd = 0.22;
         }
@@ -728,6 +805,7 @@ export class Engine {
 
   private breakBlock(x: number, y: number, z: number) {
     const w = this.world;
+    sfx.block(w.get(x, y, z), "break");
     w.set(x, y, z, AIR);
     this.markEdit(x, z);
     this.onLocalBlock?.(x, y, z, AIR);

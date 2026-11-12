@@ -113,3 +113,8 @@ button { font: inherit; color: inherit; }
 .hurt-flash { position: absolute; inset: 0; pointer-events: none; z-index: 3; box-shadow: inset 0 0 90px 30px rgba(220,30,30,.65); animation: hurtfade .5s ease-out forwards; }
 @keyframes hurtfade { from { opacity: 1; } to { opacity: 0; } }
 .pause.dead { background: rgba(80,0,0,.55); }
+.fly-actions {
+  position: absolute; right: 68px; display: flex; flex-direction: column; gap: 6px;
+  bottom: calc(176px + env(safe-area-inset-bottom, 0px));
+}
+.round.on { background: #38bdf8; color: #06283d; }

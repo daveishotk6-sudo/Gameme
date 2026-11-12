@@ -3,6 +3,7 @@ import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE } from "./blocks";
 import { loadSave } from "./save";
 import { iconURL } from "./icons";
+import { sfx } from "./audio";
 import { connectPhoton, type Ghosts, type PhotonLink } from "../net/photon";
 
 type Props = { seed: number; room: string; name: string; onExit: () => void };
@@ -15,6 +16,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const [picker, setPicker] = useState(false);
   const [online, setOnline] = useState(1);
   const [status, setStatus] = useState("Connecting");
+  const [muted, setMuted] = useState(sfx.muted);
 
   useEffect(() => {
     const el = host.current;
@@ -73,6 +75,12 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   }, [seed, room, name]);
 
   const e = () => engine.current;
+  const toggleSound = () => {
+    sfx.unlock();
+    sfx.setMuted(!sfx.muted);
+    setMuted(sfx.muted);
+    sfx.click();
+  };
   const paused = hud?.paused ?? false;
 
   return (
@@ -88,6 +96,9 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           {hud?.target ? ` · ${hud.target}` : ""}
         </div>
         <div className="top-actions">
+          <button data-hud type="button" className="menu-btn" onClick={toggleSound} aria-label={muted ? "Turn sound on" : "Turn sound off"}>
+            {muted ? "🔇" : "🔊"}
+          </button>
           <button data-hud type="button" className="menu-btn" onClick={() => e()?.setPaused(true)}>
             Menu
           </button>
@@ -131,6 +142,21 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
 
       <div className="joy" />
 
+      <div className="fly-actions">
+        <button data-hud type="button" className={hud?.flying ? "round on" : "round"} onClick={() => e()?.toggleFly()}>
+          Fly
+        </button>
+        {hud?.flying && (
+          <button data-hud type="button" className="round"
+            onPointerDown={(ev) => { ev.preventDefault(); if (e()) e()!.descendHeld = true; }}
+            onPointerUp={() => { if (e()) e()!.descendHeld = false; }}
+            onPointerCancel={() => { if (e()) e()!.descendHeld = false; }}
+            onPointerLeave={() => { if (e()) e()!.descendHeld = false; }}>
+            Down
+          </button>
+        )}
+      </div>
+
       <div className="actions">
         <button data-hud type="button" className="round"
           onPointerDown={(ev) => { ev.preventDefault(); if (e()) e()!.mineHeld = true; }}
@@ -140,11 +166,11 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           Mine
         </button>
         <button data-hud type="button" className="round jump"
-          onPointerDown={(ev) => { ev.preventDefault(); if (e()) e()!.jumpHeld = true; }}
+          onPointerDown={(ev) => { ev.preventDefault(); e()?.jumpPress(); if (e()) e()!.jumpHeld = true; }}
           onPointerUp={() => { if (e()) e()!.jumpHeld = false; }}
           onPointerCancel={() => { if (e()) e()!.jumpHeld = false; }}
           onPointerLeave={() => { if (e()) e()!.jumpHeld = false; }}>
-          Jump
+          {hud?.flying ? "Up" : "Jump"}
         </button>
         <button data-hud type="button" className="round"
           onPointerDown={(ev) => { ev.preventDefault(); if (e()) { e()!.placeQueued = true; e()!.placeHeld = true; } }}
@@ -189,8 +215,9 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             <button type="button" className="resume" onClick={() => { e()?.setPaused(false); e()?.lockPointer(); }}>
               Resume
             </button>
+            <button type="button" className="seed" onClick={toggleSound}>Sound: {muted ? "Off" : "On"}</button>
             <button type="button" className="exit" onClick={onExit}>Save &amp; Exit</button>
-            <p className="note">WASD · Space jump (double-tap to fly, Shift down) · Left click mine · Right click place · 1-9 or wheel to pick · tap the selected slot to change its block</p>
+            <p className="note">WASD · Space jump · Fly: F or double-tap Space/Jump, or the Fly button (Up/Down buttons or Space/Shift to climb and descend) · Left click mine · Right click place · 1-9 or wheel to pick · tap the selected slot to change its block</p>
           </div>
         </div>
       )}
