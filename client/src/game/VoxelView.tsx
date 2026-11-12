@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE } from "./blocks";
 import { loadSave } from "./save";
-import { connectPhoton, type ChatStatus, type PhotonLink } from "../net/photon";
+import { iconURL } from "./icons";
+import { connectPhoton, type PhotonLink } from "../net/photon";
 
 type Props = { seed: number; room: string; name: string; onExit: () => void };
 
@@ -10,15 +11,10 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<Engine | null>(null);
   const net = useRef<PhotonLink | null>(null);
-  const chatDraft = useRef<HTMLInputElement>(null);
-  const chatLog = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<HudState | null>(null);
   const [picker, setPicker] = useState(false);
-  const [chat, setChat] = useState<string[]>([]);
   const [online, setOnline] = useState(1);
   const [status, setStatus] = useState("Connecting");
-  const [chatStatus, setChatStatus] = useState<ChatStatus>("connecting");
-  const [chatNote, setChatNote] = useState("");
 
   useEffect(() => {
     const el = host.current;
@@ -27,12 +23,10 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     const slot = `room-${room}`;
     const e = new Engine({
       host: el, seed, save: loadSave(slot), touch, slot, onHud: setHud,
-      onChatKey: () => chatDraft.current?.focus(),
     });
     engine.current = e;
     e.onLocalBlock = (x, y, z, id) => net.current?.block(x, y, z, id);
     e.onPose = (p) => net.current?.move({ ...p, name });
-    // Day/night follows the room's shared server clock once connected.
     e.timeSource = () => net.current?.time() ?? null;
 
     let link: PhotonLink | null = null;
@@ -43,8 +37,6 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
         onPos: (actor, pos) => e.setRemote(actor, pos),
         onLeave: (actor) => e.removeRemote(actor),
         onBlock: (x, y, z, id) => e.applyRemoteBlock(x, y, z, id),
-        onChatStatus: (s, detail) => { setChatStatus(s); setChatNote(detail ?? ""); },
-        onChat: (from, text) => setChat((prev) => [...prev.slice(-7), `${from.replace(/-[a-z0-9]{5}$/, "")}: ${text}`]),
       });
     } catch {
       setStatus("Offline");
@@ -58,27 +50,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     };
   }, [seed, room, name]);
 
-  // Keep the newest chat line in view (the log box is only a few lines tall).
-  useEffect(() => {
-    const el = chatLog.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [chat, chatStatus]);
-
   const e = () => engine.current;
   const paused = hud?.paused ?? false;
-
-  const sendChat = () => {
-    const text = chatDraft.current?.value.trim() ?? "";
-    if (text) net.current?.say(text);
-    if (chatDraft.current) chatDraft.current.value = "";
-  };
-  const endTyping = () => {
-    const eng = e();
-    if (eng) {
-      eng.typing = false;
-      eng.lockPointer();
-    }
-  };
 
   return (
     <div className="stage">
@@ -107,45 +80,15 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             type="button"
             onClick={() => (i === hud.selected ? setPicker(true) : e()?.select(i))}
             className={i === hud.selected ? "slot on" : "slot"}
-            style={{ background: block(id).color }}
             aria-label={block(id).name}
           >
+            <img src={iconURL(id)} alt="" draggable={false} />
             <span>{i + 1}</span>
           </button>
         ))}
       </div>
 
       <div className="joy" />
-
-      <form
-        className="chat"
-        data-hud
-        onSubmit={(ev) => {
-          ev.preventDefault();
-          sendChat();
-          chatDraft.current?.blur();
-          endTyping();
-        }}
-      >
-        <div className="chat-log" ref={chatLog}>
-          {chat.length === 0 && chatStatus === "live" && <p>Chat is live for this room. Press Enter to type.</p>}
-          {chat.map((line, i) => <p key={i}>{line}</p>)}
-          {chatStatus !== "live" && (
-            <p className="chat-note">
-              {chatStatus === "error" ? `Chat offline: ${chatNote || "unknown error"}` : "Chat connecting…"}
-            </p>
-          )}
-        </div>
-        <input
-          ref={chatDraft}
-          data-hud
-          maxLength={140}
-          placeholder={chatStatus === "live" ? "Message" : "Message (sends when chat connects)"}
-          enterKeyHint="send"
-          onFocus={() => { if (engine.current) engine.current.typing = true; }}
-          onBlur={() => { if (engine.current) engine.current.typing = false; }}
-        />
-      </form>
 
       <div className="actions">
         <button data-hud type="button" className="round"
@@ -177,8 +120,10 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             <h2>Pick a block</h2>
             <div className="grid">
               {CREATIVE_PALETTE.filter((id) => id < 100).map((id) => (
-                <button key={id} type="button" className="slot" style={{ background: block(id).color }}
-                  title={block(id).name} onClick={() => { e()?.setHotbar(hud?.selected ?? 0, id); setPicker(false); }} />
+                <button key={id} type="button" className="slot" title={block(id).name}
+                  onClick={() => { e()?.setHotbar(hud?.selected ?? 0, id); setPicker(false); }}>
+                  <img src={iconURL(id)} alt="" draggable={false} />
+                </button>
               ))}
             </div>
           </div>
@@ -193,7 +138,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
               Resume
             </button>
             <button type="button" className="exit" onClick={onExit}>Save &amp; Exit</button>
-            <p className="note">WASD · Space jump (double-tap to fly, Shift down) · Left click mine · Right click place · 1-9 or wheel to pick · Enter to chat · tap the selected slot to change its block</p>
+            <p className="note">WASD · Space jump (double-tap to fly, Shift down) · Left click mine · Right click place · 1-9 or wheel to pick · tap the selected slot to change its block</p>
           </div>
         </div>
       )}

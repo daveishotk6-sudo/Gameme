@@ -21,7 +21,6 @@ export interface EngineOpts {
   save: SaveData | null;
   touch: boolean;
   slot: string;
-  onChatKey?: () => void;
   onHud: (s: HudState) => void;
 }
 
@@ -85,7 +84,6 @@ export class Engine {
   rd: number;
   clock = DAY_START;
 
-  typing = false;
   onLocalBlock?: (x: number, y: number, z: number, id: number) => void;
   onPose?: (p: { x: number; y: number; z: number; yaw: number }) => void;
   /** Shared multiplayer time of day (0..1), or null when not synced (offline / still connecting). */
@@ -242,15 +240,6 @@ export class Engine {
     };
     on("keydown", (e) => {
       if ((e.target as HTMLElement | null)?.tagName === "INPUT") return;
-      if (e.code === "Enter" || e.code === "KeyT") {
-        e.preventDefault();
-        this.typing = true;
-        this.keys.clear();
-        this.mineHeld = false;
-        if (document.pointerLockElement) document.exitPointerLock();
-        this.o.onChatKey?.();
-        return;
-      }
       if (e.repeat) return;
       if (/^Digit[1-9]$/.test(e.code)) this.select(Number(e.code.slice(5)) - 1);
       else if (e.code === "KeyF") this.flying = !this.flying;
@@ -286,7 +275,7 @@ export class Engine {
     canvas.addEventListener("mousedown", down);
     this.cleanup.push(() => canvas.removeEventListener("mousedown", down));
     const lockChange = () => {
-      if (!this.o.touch && document.pointerLockElement !== canvas && !this.paused && !this.typing) this.setPaused(true);
+      if (!this.o.touch && document.pointerLockElement !== canvas && !this.paused) this.setPaused(true);
     };
     document.addEventListener("pointerlockchange", lockChange);
     this.cleanup.push(() => document.removeEventListener("pointerlockchange", lockChange));
