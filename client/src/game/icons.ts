@@ -1,4 +1,4 @@
-import { ATLAS_COLS, TILE, block, itemInfo } from "./blocks";
+import { ATLAS_COLS, SIGN, TILE, block, itemInfo } from "./blocks";
 import { getAtlasCanvas } from "./mesh";
 
 const cache = new Map<number, string>();
@@ -19,7 +19,22 @@ function shadeFace(g: CanvasRenderingContext2D, pts: [number, number][], alpha: 
   g.restore();
 }
 
+function signIcon(g: CanvasRenderingContext2D) {
+  g.fillStyle = "#6b4a2b";
+  g.fillRect(14, 16, 4, 14);
+  g.fillStyle = "#6b4a2b";
+  g.fillRect(3, 4, 26, 15);
+  g.fillStyle = "#b88b52";
+  g.fillRect(5, 6, 22, 11);
+  g.fillStyle = "#c19760";
+  g.fillRect(5, 6, 22, 2);
+  g.fillStyle = "#24160a";
+  g.fillRect(8, 9, 16, 2);
+  g.fillRect(8, 13, 11, 2);
+}
+
 function blockIcon(g: CanvasRenderingContext2D, id: number) {
+  if (id === SIGN) return signIcon(g);
   const d = block(id);
   const atlas = getAtlasCanvas();
   if (d.cross || d.liquid) {

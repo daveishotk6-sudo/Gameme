@@ -6,6 +6,7 @@ const REGION = "us";
 
 const EV_POS = 1;
 const EV_BLOCK = 2;
+const EV_SIGN = 3;
 
 export type Ghost = { x: number; y: number; z: number; yaw: number; t: number };
 export type Ghosts = Record<string, Ghost>;
@@ -18,6 +19,7 @@ type Handlers = {
   onPos: (actor: number, pos: RemotePos) => void;
   onLeave: (actor: number) => void;
   onBlock: (x: number, y: number, z: number, id: number) => void;
+  onSign: (s: { x: number; y: number; z: number; yaw: number; text: string }) => void;
   /** Players who left the room, keyed by name, with where they were last seen. */
   onGhosts: (ghosts: Ghosts) => void;
 };
@@ -25,6 +27,8 @@ type Handlers = {
 export type PhotonLink = {
   block: (x: number, y: number, z: number, id: number) => void;
   move: (pos: RemotePos) => void;
+  /** Share a sign's text and direction; the room keeps it for players who join later. */
+  sign: (s: { x: number; y: number; z: number; yaw: number; text: string }) => void;
   /** Mark a player as offline at a position (or clear them with null). Shared through the room. */
   setGhost: (name: string, ghost: Ghost | null) => void;
   /** Shared time of day (0..1) from the room's server clock, or null until it is synced. */
@@ -161,6 +165,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
     if (!data || actorNr === client.myActor().actorNr) return;
     if (code === EV_POS) h.onPos(actorNr, data);
     else if (code === EV_BLOCK && data.id != null) h.onBlock(data.x, data.y, data.z, data.id);
+    else if (code === EV_SIGN && typeof (data as { text?: unknown }).text === "string") h.onSign(data as unknown as { x: number; y: number; z: number; yaw: number; text: string });
   };
 
   // ------------------------------------------------------------ go
@@ -172,6 +177,9 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   return {
     block(x, y, z, id) {
       client.raiseEvent(EV_BLOCK, { x, y, z, id }, { receivers: others, cache });
+    },
+    sign(s) {
+      client.raiseEvent(EV_SIGN, s, { receivers: others, cache });
     },
     move(pos) {
       client.raiseEvent(EV_POS, pos, { receivers: others });

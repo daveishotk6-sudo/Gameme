@@ -1,11 +1,12 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN } from "./blocks";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
 import { sfx, materialOf } from "./audio";
 import { buildPlayer, animatePlayer, updateTag, setPlayerLight, disposePlayer, lookOf } from "./avatar";
 import { MiningFx } from "./mining";
+import { buildSign, cleanSignText, disposeSign, retextSign, shadeSign, signKey, type SignData, type SignObject } from "./signs";
 import { DAY_MS, DAY_START } from "./daycycle";
 import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
@@ -112,6 +113,13 @@ export class Engine {
   private flyLift = 0;
   private stepDist = 0;
   private mineSfxT = 0;
+  signs = new Map<string, SignData>();
+  private signObjs = new Map<string, SignObject>();
+  private signT = 0;
+  /** True while a dialog (sign editor) has the keyboard; the world is frozen but no pause menu shows. */
+  modal = false;
+  onEditSign?: (s: SignData) => void;
+  onLocalSign?: (s: SignData) => void;
   private fx!: MiningFx;
   private fxProgress = 0;
   private fxMining = false;
@@ -129,6 +137,7 @@ export class Engine {
       this.world.loadEdits(save.edits);
       this.selected = Math.max(0, Math.min(8, save.selected | 0));
       this.clock = save.clock;
+      for (const [x, y, z, yaw, text] of save.signs ?? []) this.signs.set(signKey(x, y, z), { x, y, z, yaw, text: cleanSignText(text) });
       this.health = Math.max(1, Math.min(20, save.health ?? 20));
     }
     this.spawn = findSpawn(seed);
@@ -173,6 +182,80 @@ export class Engine {
     }
     this.world.set(x, y, z, id);
     this.markEdit(x, z);
+    if (old === SIGN && id !== SIGN) this.signs.delete(signKey(x, y, z));
+    if (id === SIGN && !this.signs.has(signKey(x, y, z))) this.signs.set(signKey(x, y, z), { x, y, z, yaw: 0, text: "" });
+  }
+
+  /** A sign's text/orientation that arrived from another player. */
+  applyRemoteSign(s: SignData) {
+    this.signs.set(signKey(s.x, s.y, s.z), { ...s, text: cleanSignText(s.text) });
+    this.syncSigns();
+  }
+
+  /** Save edited text from the sign dialog and share it. */
+  setSignText(x: number, y: number, z: number, raw: string) {
+    const s = this.signs.get(signKey(x, y, z));
+    if (!s) return;
+    s.text = cleanSignText(raw);
+    this.onLocalSign?.({ ...s });
+    this.syncSigns();
+  }
+
+  closeSign() {
+    this.modal = false;
+    this.lockPointer();
+    this.emit();
+  }
+
+  removeSign(x: number, y: number, z: number) {
+    this.breakBlock(x, y, z);
+    this.closeSign();
+  }
+
+  private openSign(x: number, y: number, z: number) {
+    const k = signKey(x, y, z);
+    let s = this.signs.get(k);
+    if (!s) {
+      s = { x, y, z, yaw: 0, text: "" };
+      this.signs.set(k, s);
+    }
+    this.modal = true;
+    this.mineHeld = false;
+    this.placeHeld = false;
+    this.keys.clear();
+    this.joy.x = this.joy.y = 0;
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.onEditSign?.({ ...s });
+    this.emit();
+  }
+
+  private syncSigns() {
+    for (const [k, s] of this.signs) {
+      const loaded = this.world.chunks.has(ck(Math.floor(s.x / CS), Math.floor(s.z / CS)));
+      const near = Math.hypot(s.x - this.pos.x, s.z - this.pos.z) < (this.rd + 1) * CS;
+      const valid = loaded && near && this.world.get(s.x, s.y, s.z) === SIGN;
+      const o = this.signObjs.get(k);
+      if (valid && !o) {
+        const so = buildSign(s);
+        this.scene.add(so.group);
+        this.signObjs.set(k, so);
+      } else if (!valid && o) {
+        this.scene.remove(o.group);
+        disposeSign(o);
+        this.signObjs.delete(k);
+      } else if (o) {
+        if (o.text !== s.text) retextSign(o, s.text);
+        o.group.rotation.y = s.yaw;
+      }
+    }
+    // Objects whose data was deleted (sign broken) go away too.
+    for (const [k, o] of this.signObjs) {
+      if (!this.signs.has(k)) {
+        this.scene.remove(o.group);
+        disposeSign(o);
+        this.signObjs.delete(k);
+      }
+    }
   }
 
   setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string; pitch?: number; mine?: boolean }) {
@@ -327,7 +410,7 @@ export class Engine {
       {
       v: 1, seed: this.world.seed,
       pos: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, pitch: this.pitch,
-      selected: this.selected, clock: this.clock, health: this.health, edits: this.world.dumpEdits(),
+      selected: this.selected, clock: this.clock, health: this.health, signs: [...this.signs.values()].map((s) => [s.x, s.y, s.z, s.yaw, s.text] as [number, number, number, number, string]), edits: this.world.dumpEdits(),
       },
       this.o.slot,
     );
@@ -338,6 +421,8 @@ export class Engine {
     for (const c of this.cleanup) c();
     for (const k of [...this.meshes.keys()]) this.dropMesh(k);
     this.fx.dispose();
+    for (const o of this.signObjs.values()) { this.scene.remove(o.group); disposeSign(o); }
+    this.signObjs.clear();
     for (const a of [...this.remotes.keys()]) this.removeRemote(a);
     for (const g of this.ghosts.values()) { this.scene.remove(g); disposePlayer(g); }
     this.ghosts.clear();
@@ -355,7 +440,7 @@ export class Engine {
       this.cleanup.push(() => window.removeEventListener(t, f as EventListener));
     };
     on("keydown", (e) => {
-      if ((e.target as HTMLElement | null)?.tagName === "INPUT") return;
+      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement | null)?.tagName ?? "")) return;
       if (e.repeat) return;
       if (/^Digit[1-9]$/.test(e.code)) this.select(Number(e.code.slice(5)) - 1);
       else if (e.code === "KeyF") this.toggleFly();
@@ -393,7 +478,7 @@ export class Engine {
     canvas.addEventListener("mousedown", down);
     this.cleanup.push(() => canvas.removeEventListener("mousedown", down));
     const lockChange = () => {
-      if (!this.o.touch && document.pointerLockElement !== canvas && !this.paused) this.setPaused(true);
+      if (!this.o.touch && document.pointerLockElement !== canvas && !this.paused && !this.modal) this.setPaused(true);
     };
     document.addEventListener("pointerlockchange", lockChange);
     this.cleanup.push(() => document.removeEventListener("pointerlockchange", lockChange));
@@ -527,7 +612,7 @@ export class Engine {
       hotbar: [...this.hotbar],
       paused: this.paused,
       pos: [Math.round(this.pos.x), Math.round(this.pos.y), Math.round(this.pos.z)],
-      target: h ? block(this.world.get(h.x, h.y, h.z)).name : "",
+      target: h ? this.targetLabel(h.x, h.y, h.z) : "",
       submerged: this.world.get(Math.floor(this.pos.x), Math.floor(this.pos.y + EYE), Math.floor(this.pos.z)) === WATER,
       health: this.health,
       air: Math.max(0, Math.ceil(this.air)),
@@ -537,11 +622,25 @@ export class Engine {
     });
   }
 
+  private targetLabel(x: number, y: number, z: number) {
+    const id = this.world.get(x, y, z);
+    if (id !== SIGN) return block(id).name;
+    const t = this.signs.get(signKey(x, y, z))?.text.replace(/\n/g, " / ") ?? "";
+    return t ? `Sign: ${t.slice(0, 40)}` : "Sign (empty)";
+  }
+
   private frame = (now: number) => {
     this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-    if (!this.paused) this.update(dt);
+    if (!this.paused && !this.modal) this.update(dt);
+    this.signT -= dt;
+    if (this.signT <= 0) {
+      this.signT = 0.4;
+      this.syncSigns();
+    }
+    const signShade = 0.3 + 0.7 * this.dayFactor;
+    for (const o of this.signObjs.values()) shadeSign(o, signShade);
 
     for (const k of this.dirty) if (this.meshes.has(k)) this.rebuild(k);
     this.dirty.clear();
@@ -777,12 +876,21 @@ export class Engine {
     if ((this.placeQueued || this.placeHeld) && this.placeCd <= 0 && hit) {
       this.placeQueued = false;
       const target = w.get(hit.x, hit.y, hit.z);
+      if (target === SIGN) {
+        // Using a sign opens its editor instead of placing next to it.
+        this.placeQueued = false;
+        this.placeHeld = false;
+        this.placeCd = 0.4;
+        this.openSign(hit.x, hit.y, hit.z);
+        return;
+      }
       const px = isReplaceable(target) ? hit.x : hit.x + hit.faceX;
       const py = isReplaceable(target) ? hit.y : hit.y + hit.faceY;
       const pz = isReplaceable(target) ? hit.z : hit.z + hit.faceZ;
       const id = this.hotbar[this.selected]!;
       const def = block(id);
-      if (id > 0 && id < 100 && isReplaceable(w.get(px, py, pz)) && py >= 0) {
+      const supported = id !== SIGN || w.solid(px, py - 1, pz);
+      if (id > 0 && id < 100 && supported && isReplaceable(w.get(px, py, pz)) && py >= 0) {
         const blocks = def.solid &&
           this.pos.x - HALF_W < px + 1 && this.pos.x + HALF_W > px &&
           this.pos.z - HALF_W < pz + 1 && this.pos.z + HALF_W > pz &&
@@ -794,6 +902,14 @@ export class Engine {
           this.fx.swingOnce();
           this.onLocalBlock?.(px, py, pz, id);
           this.placeCd = 0.22;
+          if (id === SIGN) {
+            // Face the board towards the player, snapped to 22.5 degrees, then let them write on it.
+            const snap = Math.PI / 8;
+            this.signs.set(signKey(px, py, pz), { x: px, y: py, z: pz, yaw: Math.round(this.yaw / snap) * snap, text: "" });
+            this.onLocalSign?.({ ...this.signs.get(signKey(px, py, pz))! });
+            this.syncSigns();
+            this.openSign(px, py, pz);
+          }
         }
       }
     } else this.placeQueued = false;
@@ -804,6 +920,7 @@ export class Engine {
     const oldId = w.get(x, y, z);
     sfx.block(oldId, "break");
     this.fx.burst(x, y, z, oldId, 16, 3);
+    if (oldId === SIGN) this.signs.delete(signKey(x, y, z));
     w.set(x, y, z, AIR);
     this.markEdit(x, z);
     this.onLocalBlock?.(x, y, z, AIR);

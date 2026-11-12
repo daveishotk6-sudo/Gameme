@@ -23,7 +23,8 @@ export const FLOWER_YELLOW = 21;
 export const TALL_GRASS = 22;
 export const GOLD_BLOCK = 23;
 export const PINE_LEAVES = 24;
-export const LAST_BLOCK = 24;
+export const SIGN = 25;
+export const LAST_BLOCK = 25;
 
 // Non-block items
 export const COAL = 100;
@@ -65,6 +66,8 @@ export interface BlockDef {
   drop: number | null;
   pick: boolean; // pickaxes speed this up
   light: boolean;
+  /** Drawn by the engine rather than the terrain mesher (signs). */
+  invisible: boolean;
 }
 
 const DEFS: BlockDef[] = [];
@@ -74,7 +77,7 @@ function reg(id: number, name: string, color: string, tiles: number | [number, n
   DEFS[id] = {
     id, name, color, top, bottom, side,
     solid: true, opaque: true, liquid: false, cross: false, transparent: false,
-    hardness: 1, drop: id, pick: false, light: false,
+    hardness: 1, drop: id, pick: false, light: false, invisible: false,
     ...o,
   };
 }
@@ -103,6 +106,7 @@ reg(FLOWER_RED, "Red Flower", "#d63a3a", T.FLOWER_RED, { solid: false, opaque: f
 reg(FLOWER_YELLOW, "Yellow Flower", "#f0c93a", T.FLOWER_YELLOW, { solid: false, opaque: false, cross: true, hardness: 0 });
 reg(TALL_GRASS, "Tall Grass", "#4f9a3a", T.TALL_GRASS, { solid: false, opaque: false, cross: true, hardness: 0 });
 reg(GOLD_BLOCK, "Gold Block", "#f2c744", T.GOLD_BLOCK, { hardness: 3, pick: true });
+reg(SIGN, "Sign", "#b88b52", T.PLANKS, { solid: false, opaque: false, invisible: true, hardness: 0.3 });
 reg(PINE_LEAVES, "Pine Needles", "#27603a", T.PINE_LEAVES, { hardness: 0.25, drop: null });
 
 export const BLOCKS = DEFS;

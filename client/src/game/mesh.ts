@@ -372,6 +372,7 @@ export function buildChunk(world: World, cx: number, cz: number): ChunkGeo {
           if (OPQ[P[pi + 1]!] && OPQ[P[pi - 1]!] && OPQ[P[pi + PW]!] && OPQ[P[pi - PW]!] && OPQ[P[pi + SY]!] && OPQ[P[pi - SY]!]) continue;
         }
         const def = block(id);
+        if (def.invisible) continue;
 
         if (def.cross) {
           const r = tileRect(def.side);

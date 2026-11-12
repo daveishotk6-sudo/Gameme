@@ -1,6 +1,6 @@
 import {
   GRASS, DIRT, STONE, LOG, LEAVES, SAND, COBBLE, WATER, PLANKS, GLASS, BRICK, SNOW, COAL_ORE, IRON_ORE,
-  GOLD_ORE, BASALT, LANTERN, WOOL, CACTUS, FLOWER_RED, FLOWER_YELLOW, TALL_GRASS, GOLD_BLOCK, PINE_LEAVES,
+  GOLD_ORE, BASALT, LANTERN, WOOL, CACTUS, FLOWER_RED, FLOWER_YELLOW, TALL_GRASS, GOLD_BLOCK, PINE_LEAVES, SIGN,
 } from "./blocks";
 
 /**
@@ -17,7 +17,7 @@ export function materialOf(id: number): Mat {
     case DIRT: return "dirt";
     case GRASS: case TALL_GRASS: case FLOWER_RED: case FLOWER_YELLOW: return "grass";
     case SAND: return "sand";
-    case LOG: case PLANKS: case CACTUS: return "wood";
+    case LOG: case PLANKS: case CACTUS: case SIGN: return "wood";
     case LEAVES: case PINE_LEAVES: return "leaf";
     case WOOL: return "wool";
     case SNOW: return "snow";

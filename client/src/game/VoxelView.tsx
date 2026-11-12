@@ -3,6 +3,7 @@ import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE } from "./blocks";
 import { loadSave } from "./save";
 import { iconURL } from "./icons";
+import { SIGN_COLS, SIGN_LINES, type SignData } from "./signs";
 import { sfx } from "./audio";
 import { connectPhoton, type Ghosts, type PhotonLink } from "../net/photon";
 
@@ -14,6 +15,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const net = useRef<PhotonLink | null>(null);
   const [hud, setHud] = useState<HudState | null>(null);
   const [picker, setPicker] = useState(false);
+  const [sign, setSign] = useState<SignData | null>(null);
+  const [signText, setSignText] = useState("");
   const [online, setOnline] = useState(1);
   const [status, setStatus] = useState("Connecting");
   const [muted, setMuted] = useState(sfx.muted);
@@ -31,6 +34,11 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     });
     engine.current = e;
     e.onLocalBlock = (x, y, z, id) => net.current?.block(x, y, z, id);
+    e.onEditSign = (s) => {
+      setSign(s);
+      setSignText(s.text);
+    };
+    e.onLocalSign = (s) => net.current?.sign(s);
     e.onPose = (p) => net.current?.move({ ...p, name });
     e.timeSource = () => net.current?.time() ?? null;
 
@@ -61,6 +69,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           }
         },
         onBlock: (x, y, z, id) => e.applyRemoteBlock(x, y, z, id),
+        onSign: (s) => e.applyRemoteSign(s),
       });
     } catch {
       setStatus("Offline");
@@ -193,6 +202,62 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {sign && (
+        <div className="pause">
+          <div className="card sign-card" data-hud>
+            <h2>Sign</h2>
+            <textarea
+              autoFocus
+              rows={SIGN_LINES}
+              value={signText}
+              placeholder="Write something…"
+              onChange={(ev) =>
+                setSignText(
+                  ev.target.value
+                    .replace(/\r/g, "")
+                    .split("\n")
+                    .slice(0, SIGN_LINES)
+                    .map((l) => l.slice(0, SIGN_COLS))
+                    .join("\n"),
+                )
+              }
+            />
+            <p className="note">Up to {SIGN_LINES} lines of {SIGN_COLS} characters. Everyone in the room can read it.</p>
+            <button
+              type="button"
+              className="resume"
+              onClick={() => {
+                e()?.setSignText(sign.x, sign.y, sign.z, signText);
+                setSign(null);
+                e()?.closeSign();
+              }}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="exit"
+              onClick={() => {
+                setSign(null);
+                e()?.closeSign();
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="exit"
+              onClick={() => {
+                e()?.removeSign(sign.x, sign.y, sign.z);
+                setSign(null);
+              }}
+            >
+              Remove sign
+            </button>
           </div>
         </div>
       )}

@@ -118,3 +118,7 @@ button { font: inherit; color: inherit; }
   bottom: calc(176px + env(safe-area-inset-bottom, 0px));
 }
 .round.on { background: #38bdf8; color: #06283d; }
+
+.sign-card textarea { width: 100%; box-sizing: border-box; resize: none; font: 600 18px/1.35 system-ui, sans-serif; padding: 10px 12px;
+  border-radius: 10px; border: 2px solid #6b4a2b; background: #b88b52; color: #24160a; text-align: center; margin-bottom: 8px; }
+.sign-card textarea::placeholder { color: rgba(36,22,10,.5); }
