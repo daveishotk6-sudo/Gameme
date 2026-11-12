@@ -13,6 +13,10 @@ export interface HudState {
   pos: [number, number, number];
   target: string;
   submerged: boolean;
+  health: number;
+  air: number;
+  hurt: number;
+  dead: boolean;
 }
 
 export interface EngineOpts {
@@ -21,6 +25,7 @@ export interface EngineOpts {
   save: SaveData | null;
   touch: boolean;
   slot: string;
+  name: string;
   onHud: (s: HudState) => void;
 }
 
@@ -32,23 +37,55 @@ interface Remote {
   name: string;
 }
 
-function nameTag(name: string) {
+function nameTag(name: string, dim = false) {
   const c = document.createElement("canvas");
   c.width = 256; c.height = 48;
   const g = c.getContext("2d")!;
-  g.font = "bold 28px sans-serif";
+  g.font = (dim ? "italic bold 26px" : "bold 28px") + " sans-serif";
   g.textAlign = "center";
   g.fillStyle = "rgba(0,0,0,0.55)";
   const w = Math.min(250, g.measureText(name).width + 22);
   g.fillRect(128 - w / 2, 4, w, 40);
-  g.fillStyle = "#fff";
-  g.fillText(name.slice(0, 16), 128, 35);
+  g.fillStyle = dim ? "#b8c4d8" : "#fff";
+  g.fillText(name.slice(0, 22), 128, 35);
   const t = new THREE.CanvasTexture(c);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
-  sp.scale.set(1.6, 0.3, 1);
+  sp.scale.set(dim ? 2.2 : 1.6, dim ? 0.38 : 0.3, 1);
   sp.position.y = 2.1;
   sp.renderOrder = 20;
   return sp;
+}
+
+function buildFigure(ghost: boolean, label: string) {
+  const g = new THREE.Group();
+  const add = (w: number, h: number, d: number, c: number, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshBasicMaterial(ghost ? { color: c, transparent: true, opacity: 0.42, depthWrite: false } : { color: c }),
+    );
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  const body = ghost ? 0x9fb4d6 : 0x3b82f6;
+  const legs = ghost ? 0x7d92b8 : 0x1e40af;
+  const skin = ghost ? 0xc9d6ea : 0xf2c9a0;
+  add(0.5, 0.75, 0.28, body, 0, 1.05, 0);
+  add(0.42, 0.42, 0.42, skin, 0, 1.65, 0);
+  add(0.08, 0.08, 0.02, 0x222222, -0.1, 1.68, -0.22);
+  add(0.08, 0.08, 0.02, 0x222222, 0.1, 1.68, -0.22);
+  add(0.22, 0.68, 0.24, legs, -0.13, 0.34, 0);
+  add(0.22, 0.68, 0.24, legs, 0.13, 0.34, 0);
+  g.add(nameTag(label, ghost));
+  return g;
+}
+
+function disposeGroup(g: THREE.Group) {
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    m.geometry?.dispose();
+    const mat = m.material as THREE.Material | undefined;
+    mat?.dispose();
+  });
 }
 
 export class Engine {
@@ -89,6 +126,16 @@ export class Engine {
   /** Shared multiplayer time of day (0..1), or null when not synced (offline / still connecting). */
   timeSource?: () => number | null;
   private remotes = new Map<number, Remote>();
+  private ghosts = new Map<string, THREE.Group>();
+  health = 20;
+  air = 10;
+  dead = false;
+  private hurt = 0;
+  private hurtCd = 99;
+  private regenT = 0;
+  private airT = 0;
+  private peakY = 0;
+  private airborne = false;
   private poseT = 0;
   private raf = 0;
   private last = performance.now();
@@ -114,6 +161,7 @@ export class Engine {
       this.world.loadEdits(save.edits);
       this.selected = Math.max(0, Math.min(8, save.selected | 0));
       this.clock = save.clock;
+      this.health = Math.max(1, Math.min(20, save.health ?? 20));
     }
     this.spawn = findSpawn(seed);
     const p = save ? save.pos : [this.spawn.x, this.spawn.y, this.spawn.z];
@@ -154,20 +202,7 @@ export class Engine {
   setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string }) {
     let r = this.remotes.get(actor);
     if (!r) {
-      const g = new THREE.Group();
-      const mat = (c: number) => new THREE.MeshBasicMaterial({ color: c });
-      const add = (w: number, h: number, d: number, c: number, x: number, y: number, z: number) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
-        m.position.set(x, y, z);
-        g.add(m);
-      };
-      add(0.5, 0.75, 0.28, 0x3b82f6, 0, 1.05, 0);
-      add(0.42, 0.42, 0.42, 0xf2c9a0, 0, 1.65, 0);
-      add(0.08, 0.08, 0.02, 0x222222, -0.1, 1.68, -0.22);
-      add(0.08, 0.08, 0.02, 0x222222, 0.1, 1.68, -0.22);
-      add(0.22, 0.68, 0.24, 0x1e40af, -0.13, 0.34, 0);
-      add(0.22, 0.68, 0.24, 0x1e40af, 0.13, 0.34, 0);
-      g.add(nameTag(p.name));
+      const g = buildFigure(false, p.name);
       g.position.set(p.x, p.y, p.z);
       this.scene.add(g);
       r = { group: g, tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, name: p.name };
@@ -176,16 +211,53 @@ export class Engine {
     r.tx = p.x; r.ty = p.y; r.tz = p.z; r.tyaw = p.yaw;
   }
 
+  remoteInfo(actor: number) {
+    const r = this.remotes.get(actor);
+    return r ? { name: r.name, x: r.tx, y: r.ty, z: r.tz, yaw: r.tyaw } : null;
+  }
+
+  /** Show players who left as faded ghosts tagged [Offline] where they were last seen. */
+  setGhosts(map: Record<string, { x: number; y: number; z: number; yaw: number }>) {
+    for (const [who, g] of this.ghosts) {
+      if (!map[who] || who === this.o.name) {
+        this.scene.remove(g);
+        disposeGroup(g);
+        this.ghosts.delete(who);
+      }
+    }
+    for (const [who, p] of Object.entries(map)) {
+      if (who === this.o.name) continue;
+      let g = this.ghosts.get(who);
+      if (!g) {
+        g = buildFigure(true, `[Offline] ${who}`);
+        this.scene.add(g);
+        this.ghosts.set(who, g);
+      }
+      g.position.set(p.x, p.y, p.z);
+      g.rotation.y = p.yaw;
+      g.userData.baseY = p.y;
+    }
+  }
+
+  /** Move to a saved position, but only if we are still near where we spawned. */
+  teleport(p: { x: number; y: number; z: number; yaw: number }) {
+    const dx = this.pos.x - this.spawn.x, dz = this.pos.z - this.spawn.z;
+    if (Math.hypot(dx, dz) > 6) return;
+    this.pos = { x: p.x, y: p.y, z: p.z };
+    this.yaw = p.yaw;
+    this.vel.x = this.vel.y = this.vel.z = 0;
+    this.world.stream(this.pos.x, this.pos.z, this.rd + 1);
+    for (let i = 0; i < 64 && overlaps(this.world, this.pos.x, this.pos.y, this.pos.z); i++) this.pos.y += 1;
+    this.peakY = this.pos.y;
+    this.lastChunk = "";
+    this.syncChunks(true);
+  }
+
   removeRemote(actor: number) {
     const r = this.remotes.get(actor);
     if (!r) return;
     this.scene.remove(r.group);
-    r.group.traverse((o) => {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose();
-      const mat = m.material as THREE.Material | undefined;
-      mat?.dispose();
-    });
+    disposeGroup(r.group);
     this.remotes.delete(actor);
   }
 
@@ -197,6 +269,38 @@ export class Engine {
     this.hotbar[slot] = id;
     this.emit();
   }
+  damage(n: number) {
+    if (this.dead || n <= 0) return;
+    this.health = Math.max(0, this.health - n);
+    this.hurt++;
+    this.hurtCd = 0;
+    if (this.health <= 0) {
+      this.dead = true;
+      this.mineHeld = false;
+      this.placeHeld = false;
+      this.keys.clear();
+      this.vel.x = this.vel.z = 0;
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+    this.emit();
+  }
+
+  respawn() {
+    this.health = 20;
+    this.air = 10;
+    this.dead = false;
+    this.hurtCd = 99;
+    this.pos = { x: this.spawn.x, y: this.spawn.y + 1, z: this.spawn.z };
+    this.vel.x = this.vel.y = this.vel.z = 0;
+    this.flying = false;
+    this.peakY = this.pos.y;
+    this.world.stream(this.pos.x, this.pos.z, this.rd + 1);
+    this.lastChunk = "";
+    this.syncChunks(true);
+    this.lockPointer();
+    this.emit();
+  }
+
   setPaused(p: boolean) {
     this.paused = p;
     if (p) {
@@ -214,7 +318,7 @@ export class Engine {
       {
       v: 1, seed: this.world.seed,
       pos: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, pitch: this.pitch,
-      selected: this.selected, clock: this.clock, edits: this.world.dumpEdits(),
+      selected: this.selected, clock: this.clock, health: this.health, edits: this.world.dumpEdits(),
       },
       this.o.slot,
     );
@@ -225,6 +329,8 @@ export class Engine {
     for (const c of this.cleanup) c();
     for (const k of [...this.meshes.keys()]) this.dropMesh(k);
     for (const a of [...this.remotes.keys()]) this.removeRemote(a);
+    for (const g of this.ghosts.values()) { this.scene.remove(g); disposeGroup(g); }
+    this.ghosts.clear();
     this.mats.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -411,6 +517,10 @@ export class Engine {
       pos: [Math.round(this.pos.x), Math.round(this.pos.y), Math.round(this.pos.z)],
       target: h ? block(this.world.get(h.x, h.y, h.z)).name : "",
       submerged: this.world.get(Math.floor(this.pos.x), Math.floor(this.pos.y + EYE), Math.floor(this.pos.z)) === WATER,
+      health: this.health,
+      air: Math.max(0, Math.ceil(this.air)),
+      hurt: this.hurt,
+      dead: this.dead,
     });
   }
 
@@ -440,6 +550,7 @@ export class Engine {
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       g.rotation.y += dy * k2;
     }
+    for (const g of this.ghosts.values()) g.position.y = (g.userData.baseY as number) + Math.sin(this.elapsed * 1.6) * 0.1;
     this.poseT += dt;
     if (this.poseT > 0.12) {
       this.poseT = 0;
@@ -455,6 +566,8 @@ export class Engine {
 
   private update(dt: number) {
     const w = this.world;
+    if (this.dead) return;
+    this.hurtCd += dt;
     this.clock += (dt * 1000) / DAY_MS;
     const shared = this.timeSource?.();
     if (shared != null) {
@@ -501,6 +614,39 @@ export class Engine {
     if (this.grounded && jump && !this.flying) { this.vel.y = 8.6; this.grounded = false; }
     if (this.grounded && this.flying) this.flying = false;
 
+    // Fall damage: measured from the highest point of the current fall.
+    if (this.flying || inWater) {
+      this.peakY = this.pos.y;
+      this.airborne = false;
+    } else if (this.grounded) {
+      if (this.airborne) {
+        const fall = this.peakY - this.pos.y;
+        if (fall > 3.2) this.damage(Math.floor(fall - 3));
+      }
+      this.airborne = false;
+      this.peakY = this.pos.y;
+    } else {
+      this.airborne = true;
+      this.peakY = Math.max(this.peakY, this.pos.y);
+    }
+
+    // Drowning and natural regeneration.
+    if (this.under) {
+      this.airT += dt;
+      if (this.airT >= 1) {
+        this.airT = 0;
+        if (this.air > 0) this.air -= 1;
+        else this.damage(2);
+      }
+    } else {
+      this.air = Math.min(10, this.air + dt * 4);
+      this.airT = 0;
+    }
+    if (this.health < 20 && this.hurtCd > 4) {
+      this.regenT += dt;
+      if (this.regenT >= 3) { this.regenT = 0; this.health = Math.min(20, this.health + 1); }
+    } else this.regenT = 0;
+
     // Auto-jump up single steps (touch only).
     if (this.o.touch && this.grounded && ml > 0.2) {
       const d = Math.hypot(tx, tz) || 1;
@@ -515,6 +661,8 @@ export class Engine {
     if (this.pos.y < VOID_Y) {
       this.pos.x = this.spawn.x; this.pos.y = this.spawn.y + 2; this.pos.z = this.spawn.z;
       this.vel.x = this.vel.y = this.vel.z = 0;
+      this.peakY = this.pos.y;
+      this.damage(4);
     }
 
     // Chunk streaming when crossing a chunk edge.

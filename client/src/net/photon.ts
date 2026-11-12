@@ -7,6 +7,8 @@ const REGION = "us";
 const EV_POS = 1;
 const EV_BLOCK = 2;
 
+export type Ghost = { x: number; y: number; z: number; yaw: number; t: number };
+export type Ghosts = Record<string, Ghost>;
 export type RemotePos = { x: number; y: number; z: number; yaw: number; name: string };
 
 type Handlers = {
@@ -15,11 +17,15 @@ type Handlers = {
   onPos: (actor: number, pos: RemotePos) => void;
   onLeave: (actor: number) => void;
   onBlock: (x: number, y: number, z: number, id: number) => void;
+  /** Players who left the room, keyed by name, with where they were last seen. */
+  onGhosts: (ghosts: Ghosts) => void;
 };
 
 export type PhotonLink = {
   block: (x: number, y: number, z: number, id: number) => void;
   move: (pos: RemotePos) => void;
+  /** Mark a player as offline at a position (or clear them with null). Shared through the room. */
+  setGhost: (name: string, ghost: Ghost | null) => void;
   /** Shared time of day (0..1) from the room's server clock, or null until it is synced. */
   time: () => number | null;
   close: () => void;
@@ -72,6 +78,57 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   const roomRetry = makeRetry(connectRoom, isClosed);
   let clockSeen = false;
 
+  // ------------------------------------------------------------ ghosts (offline players)
+  const GH = "gh";
+  const MAX_GHOSTS = 24;
+  const WEEK = 7 * 24 * 3600 * 1000;
+  const storeKey = "gameme:ghosts:" + safe;
+  const clean = (o: unknown): Ghosts => {
+    const out: Ghosts = {};
+    if (!o || typeof o !== "object") return out;
+    for (const [k, v] of Object.entries(o as Record<string, Ghost>)) {
+      if (v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) && Date.now() - (v.t || 0) < WEEK) out[k.slice(0, 16)] = v;
+    }
+    return out;
+  };
+  const loadLocal = (): Ghosts => {
+    try {
+      return clean(JSON.parse(localStorage.getItem(storeKey) || "{}"));
+    } catch {
+      return {};
+    }
+  };
+  const readRoom = (): Ghosts => {
+    try {
+      const raw = client.myRoom().getCustomProperties()[GH];
+      return clean(typeof raw === "string" ? JSON.parse(raw) : {});
+    } catch {
+      return {};
+    }
+  };
+  let ghosts: Ghosts = loadLocal();
+  const trim = (g: Ghosts) => {
+    const keys = Object.keys(g).sort((a, b) => (g[b]!.t || 0) - (g[a]!.t || 0));
+    for (const k of keys.slice(MAX_GHOSTS)) delete g[k];
+    return g;
+  };
+  const publish = (g: Ghosts, write: boolean) => {
+    ghosts = trim(g);
+    h.onGhosts(ghosts);
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(ghosts));
+    } catch {
+      /* storage unavailable */
+    }
+    if (write && client.state() === LBC.State.Joined) {
+      try {
+        client.myRoom().setCustomProperty(GH, JSON.stringify(ghosts));
+      } catch {
+        /* not joined yet */
+      }
+    }
+  };
+
   client.onStateChange = (state: number) => {
     const label = LBC.StateToName(state);
     if (state !== LBC.State.Joined) clockSeen = false;
@@ -83,6 +140,8 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
       roomRetry.reset();
       h.onCount(client.myRoomActorCount());
       client.syncServerTime(); // refresh the shared clock now that we're in the room
+      // Room knowledge wins; anything only we remember is shared back to the room.
+      publish({ ...ghosts, ...readRoom() }, true);
     }
     if (state === LBC.State.Error || state === LBC.State.Disconnected) {
       h.onStatus(closed ? label : "Reconnecting");
@@ -96,6 +155,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
     h.onLeave(actor.actorNr);
     h.onCount(client.myRoomActorCount());
   };
+  client.onMyRoomPropertiesChange = () => publish(readRoom(), false);
   client.onEvent = (code: number, data: RemotePos & { id?: number }, actorNr: number) => {
     if (!data || actorNr === client.myActor().actorNr) return;
     if (code === EV_POS) h.onPos(actorNr, data);
@@ -103,6 +163,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   };
 
   // ------------------------------------------------------------ go
+  h.onGhosts(ghosts);
   roomRetry.reset();
   connectRoom();
   const resync = window.setInterval(() => client.syncServerTime(), 60000);
@@ -113,6 +174,12 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
     },
     move(pos) {
       client.raiseEvent(EV_POS, pos, { receivers: others });
+    },
+    setGhost(who, g) {
+      const base = client.state() === LBC.State.Joined ? { ...ghosts, ...readRoom() } : { ...ghosts };
+      if (g) base[who.slice(0, 16)] = g;
+      else delete base[who.slice(0, 16)];
+      publish(base, true);
     },
     time() {
       if (client.state() !== LBC.State.Joined) return null;

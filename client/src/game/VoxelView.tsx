@@ -3,7 +3,7 @@ import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE } from "./blocks";
 import { loadSave } from "./save";
 import { iconURL } from "./icons";
-import { connectPhoton, type PhotonLink } from "../net/photon";
+import { connectPhoton, type Ghosts, type PhotonLink } from "../net/photon";
 
 type Props = { seed: number; room: string; name: string; onExit: () => void };
 
@@ -21,8 +21,11 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     if (!el) return;
     const touch = window.matchMedia("(pointer: coarse)").matches;
     const slot = `room-${room}`;
+    const saved = loadSave(slot);
+    let placed = false;
+    let known: Ghosts = {};
     const e = new Engine({
-      host: el, seed, save: loadSave(slot), touch, slot, onHud: setHud,
+      host: el, seed, save: saved, touch, slot, name, onHud: setHud,
     });
     engine.current = e;
     e.onLocalBlock = (x, y, z, id) => net.current?.block(x, y, z, id);
@@ -34,8 +37,27 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
       link = connectPhoton(room, name, {
         onStatus: setStatus,
         onCount: setOnline,
-        onPos: (actor, pos) => e.setRemote(actor, pos),
-        onLeave: (actor) => e.removeRemote(actor),
+        onPos: (actor, pos) => {
+          e.setRemote(actor, pos);
+          // They are back online, so their ghost goes away.
+          if (known[pos.name]) link?.setGhost(pos.name, null);
+        },
+        onLeave: (actor) => {
+          const r = e.remoteInfo(actor);
+          e.removeRemote(actor);
+          if (r) link?.setGhost(r.name, { x: r.x, y: r.y, z: r.z, yaw: r.yaw, t: Date.now() });
+        },
+        onGhosts: (g) => {
+          known = g;
+          e.setGhosts(g);
+          const mine = g[name];
+          if (mine && !placed) {
+            placed = true;
+            // Rejoining without a local save: stand where we were last seen instead of the default spawn.
+            if (!saved) e.teleport(mine);
+            link?.setGhost(name, null);
+          }
+        },
         onBlock: (x, y, z, id) => e.applyRemoteBlock(x, y, z, id),
       });
     } catch {
@@ -70,6 +92,25 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             Menu
           </button>
         </div>
+      </div>
+
+      {hud && hud.hurt > 0 && <div key={hud.hurt} className="hurt-flash" />}
+
+      <div className="vitals">
+        <div className="hearts" aria-label={`Health ${hud?.health ?? 20} of 20`}>
+          {Array.from({ length: 10 }, (_, i) => {
+            const hp = hud?.health ?? 20;
+            const cls = hp >= i * 2 + 2 ? "full" : hp === i * 2 + 1 ? "half" : "empty";
+            return <span key={i} className={`heart ${cls}`}>♥</span>;
+          })}
+        </div>
+        {hud && (hud.submerged || hud.air < 10) && (
+          <div className="bubbles">
+            {Array.from({ length: 10 }, (_, i) => (
+              <span key={i} className={i < hud.air ? "bubble" : "bubble gone"} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="hotbar">
@@ -126,6 +167,17 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {hud?.dead && (
+        <div className="pause dead">
+          <div className="card">
+            <h2>You died</h2>
+            <button type="button" className="resume" onClick={() => e()?.respawn()}>
+              Respawn
+            </button>
           </div>
         </div>
       )}

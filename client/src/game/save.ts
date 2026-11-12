@@ -6,6 +6,7 @@ export interface SaveData {
   pitch: number;
   selected: number;
   clock: number;
+  health?: number;
   edits: number[];
 }
 const KEY = (slot: string) => `gameme:save:v1:${slot}`;
