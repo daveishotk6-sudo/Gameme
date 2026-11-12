@@ -15,6 +15,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const net = useRef<PhotonLink | null>(null);
   const [hud, setHud] = useState<HudState | null>(null);
   const [picker, setPicker] = useState(false);
+  /** Which hotbar slot (0-8) the inventory is editing. */
+  const [editSlot, setEditSlot] = useState(0);
   const [sign, setSign] = useState<SignData | null>(null);
   const [signText, setSignText] = useState("");
   const [online, setOnline] = useState(1);
@@ -141,9 +143,13 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             data-hud
             key={i}
             type="button"
-            onClick={() => (i === hud.selected ? setPicker(true) : e()?.select(i))}
+            onClick={() => {
+              e()?.select(i);
+              setEditSlot(i);
+              setPicker(true);
+            }}
             className={i === hud.selected ? "slot on" : "slot"}
-            aria-label={block(id).name}
+            aria-label={`Slot ${i + 1}: ${itemInfo(id).name}`}
           >
             <img src={iconURL(id)} alt="" draggable={false} />
             <span>{i + 1}</span>
@@ -194,16 +200,52 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
 
       {picker && (
         <div className="pause" onClick={() => setPicker(false)}>
-          <div className="card picker" onClick={(ev) => ev.stopPropagation()}>
-            <h2>Pick a block / item</h2>
+          <div className="card picker inv" onClick={(ev) => ev.stopPropagation()}>
+            <h2>Inventory</h2>
+            <p className="inv-hint">Tap a hotbar slot below, then choose a block or item for that slot.</p>
+
+            <div className="inv-slots">
+              {(hud?.hotbar ?? [0, 0, 0, 0, 0, 0, 0, 0, 0]).map((id, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={i === editSlot ? "slot on" : "slot"}
+                  title={`Slot ${i + 1}`}
+                  onClick={() => {
+                    setEditSlot(i);
+                    e()?.select(i);
+                  }}
+                >
+                  <img src={iconURL(id)} alt="" draggable={false} />
+                  <span>{i + 1}</span>
+                </button>
+              ))}
+            </div>
+
+            <p className="inv-editing">Editing slot <strong>{editSlot + 1}</strong></p>
+
             <div className="grid">
               {CREATIVE_PALETTE.map((id) => (
-                <button key={id} type="button" className="slot" title={itemInfo(id).name}
-                  onClick={() => { e()?.setHotbar(hud?.selected ?? 0, id); setPicker(false); }}>
+                <button
+                  key={id}
+                  type="button"
+                  className="slot"
+                  title={itemInfo(id).name}
+                  onClick={() => {
+                    e()?.setHotbar(editSlot, id);
+                    e()?.select(editSlot);
+                    sfx.click();
+                    // stay open so you can fill multiple slots
+                  }}
+                >
                   <img src={iconURL(id)} alt="" draggable={false} />
                 </button>
               ))}
             </div>
+
+            <button type="button" className="inv-done" onClick={() => setPicker(false)}>
+              Done
+            </button>
           </div>
         </div>
       )}

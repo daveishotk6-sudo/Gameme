@@ -21,18 +21,18 @@ export interface Mob {
 }
 
 const KIND: Record<MobKind, { hp: number; speed: number; drop: number; scale: number; color: number; accent: number }> = {
-  pig:     { hp: 8,  speed: 2.4, drop: RAW_PORK,    scale: 0.85, color: 0xf0a0a8, accent: 0xe07080 },
-  cow:     { hp: 14, speed: 2.0, drop: RAW_BEEF,    scale: 1.15, color: 0x4a3428, accent: 0xf0f0f0 },
-  chicken: { hp: 5,  speed: 3.2, drop: RAW_CHICKEN, scale: 0.55, color: 0xf5f0e6, accent: 0xe8a030 },
+  pig:     { hp: 8,  speed: 2.4, drop: RAW_PORK,    scale: 0.85, color: 0xffb6c1, accent: 0xff7a8a },
+  cow:     { hp: 14, speed: 2.0, drop: RAW_BEEF,    scale: 1.15, color: 0x6b4a36, accent: 0xf5f5f5 },
+  chicken: { hp: 5,  speed: 3.2, drop: RAW_CHICKEN, scale: 0.55, color: 0xfff8e7, accent: 0xffb020 },
 };
 
 let nextId = 1;
 
 function box(w: number, h: number, d: number, color: number, y = 0) {
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshLambertMaterial({ color }),
-  );
+  // MeshBasicMaterial — the scene has no lights (avatars use the same approach).
+  const mat = new THREE.MeshBasicMaterial({ color });
+  mat.userData.base = color;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.position.y = y;
   m.castShadow = false;
   return m;
@@ -167,11 +167,12 @@ export function updateMob(m: Mob, world: World, dt: number, playerPos: { x: numb
   if (m.grounded && Math.hypot(m.vel.x, m.vel.z) > 0.3) {
     m.group.position.y += Math.sin(m.age * 10) * 0.03;
   }
-  // Flash when hurt
+  // Flash red when hurt (MeshBasicMaterial — no lights in this scene).
   m.group.traverse((c) => {
-    if (c instanceof THREE.Mesh && c.material instanceof THREE.MeshLambertMaterial) {
-      c.material.emissive?.setHex(m.hurtT > 0 ? 0x880000 : 0x000000);
-      if (!c.material.emissive) c.material.color.setHex(m.hurtT > 0 ? 0xffaaaa : (c.userData.baseColor ?? c.material.color.getHex()));
+    if (c instanceof THREE.Mesh && c.material instanceof THREE.MeshBasicMaterial) {
+      const base = (c.material.userData.base as number) ?? 0xffffff;
+      if (m.hurtT > 0) c.material.color.setHex(0xff6666);
+      else c.material.color.setHex(base);
     }
   });
 
