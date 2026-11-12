@@ -134,17 +134,14 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   if (debug) client.setLogLevel(Photon.LogLevel.INFO);
   else client.setLogLevel(Photon.LogLevel.ERROR);
 
-  // Try several regions — a single hard-coded region can look like "offline" when that
-  // cluster is unreachable from the player's network.
-  const REGIONS = [REGION, "us", "eu", "asia", "sa", "jp", "au"];
-  let regionIdx = 0;
+  // Stable identity for this browser session (changing it every retry causes flaps).
+  const sessionUserId = newUserId();
+  let activeRegion = REGION;
   const connectRoom = (): boolean => {
     try {
-      client.setUserId(newUserId());
-      const region = REGIONS[regionIdx % REGIONS.length]!;
-      regionIdx++;
-      h.onStatus(`Connecting (${region})`);
-      return !!client.connectToRegionMaster(region);
+      client.setUserId(sessionUserId);
+      h.onStatus(`Connecting (${activeRegion})`);
+      return !!client.connectToRegionMaster(activeRegion);
     } catch (err) {
       h.onStatus(String((err as Error)?.message || err));
       return false;
@@ -152,6 +149,8 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   };
   const roomRetry = makeRetry(connectRoom, isClosed);
   let clockSeen = false;
+  let joinedOnce = false;
+  let connectFailCount = 0;
 
   // ------------------------------------------------------------ ghosts (offline players)
   const GH = "gh";
@@ -215,8 +214,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
     edits = new Map();
   }
   let editWriteTimer = 0;
-  let joinedOnce = false;
-
+  
   const persistEditsLocal = () => {
     try {
       localStorage.setItem(editsKey, JSON.stringify(mapToFlat(edits)));
@@ -233,23 +231,15 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
     }
   };
 
+  // Photon room custom properties have a small size limit. Writing the full world
+  // there was kicking clients (connect → disconnect loop). Holder + live events
+  // are the real sync path; we only keep edits in memory/localStorage here.
   const writeRoomEdits = () => {
-    if (client.state() !== LBC.State.Joined) return;
-    try {
-      // Compact flat number array keeps property size smaller than objects.
-      client.myRoom().setCustomProperty(ED, mapToFlat(trimMap(edits)));
-    } catch {
-      /* room full / not joined */
-    }
+    /* intentionally no-op — do not setCustomProperty(ED, ...) */
   };
 
   const scheduleRoomWrite = () => {
     persistEditsLocal();
-    if (editWriteTimer) return;
-    editWriteTimer = window.setTimeout(() => {
-      editWriteTimer = 0;
-      writeRoomEdits();
-    }, 800);
   };
 
   const mergeEdits = (incoming: Map<string, WorldEdit>, apply: boolean) => {
@@ -289,15 +279,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
     if (state === LBC.State.JoinedLobby) {
       client.myActor().setName(name.slice(0, 16));
       // Keep the room around after the last player leaves so builds/cache survive.
-      client.joinRoom(
-        safe,
-        { createIfNotExists: true },
-        {
-          maxPlayers: 16,
-          emptyRoomLiveTime: EMPTY_ROOM_TTL_MS,
-          roomTTL: EMPTY_ROOM_TTL_MS,
-        },
-      );
+      client.joinRoom(safe, { createIfNotExists: true }, { maxPlayers: 16 });
     }
     if (state === LBC.State.Joined) {
       roomRetry.reset();
@@ -305,13 +287,12 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
       client.syncServerTime();
       publish({ ...ghosts, ...readRoom() }, true);
 
-      // Merge room property edits + what we had locally, then apply to the game.
+      // Apply any room-property leftovers (older clients), then local memory.
       const roomEd = readRoomEdits();
       mergeEdits(roomEd, false);
-      // If we know more than the room (we built while alone earlier), push our set up.
-      if (edits.size > roomEd.size) writeRoomEdits();
-      else if (roomEd.size > 0) writeRoomEdits(); // normalize
       applyAllToGame();
+      connectFailCount = 0;
+      activeRegion = REGION; // stick with working region
 
       // Ask others for a fresh snapshot (they reply with EV_WORLD).
       try {
@@ -321,24 +302,31 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
       }
       joinedOnce = true;
     }
-    if (state === LBC.State.Error || state === LBC.State.Disconnected) {
-      if (!closed) {
+    if (state === LBC.State.Joined) {
+      h.onStatus("");
+    } else if (state === LBC.State.Error || state === LBC.State.Disconnected) {
+      if (closed) {
+        h.onStatus(label);
+      } else {
+        connectFailCount++;
         h.onStatus("Reconnecting…");
+        // Only hop region after several failures in a row.
+        if (connectFailCount > 0 && connectFailCount % 3 === 0) {
+          const REGIONS = ["us", "eu", "asia", "sa", "jp", "au"];
+          activeRegion = REGIONS[Math.floor(connectFailCount / 3) % REGIONS.length]!;
+        }
         roomRetry.schedule();
-      } else h.onStatus(label);
-    } else if (state === LBC.State.Joined) {
-      /* status cleared below path already */
-    } else if (state !== LBC.State.Joined) {
+      }
+    } else {
       const pretty = LBC.StateToName?.(state) || "Connecting";
-      h.onStatus(pretty === "Joined" ? "" : pretty);
+      if (pretty !== "Joined") h.onStatus(pretty);
     }
-    if (state === LBC.State.Joined) h.onStatus("");
   };
   client.onError = (code: number, msg: string) => {
-    const text = msg || `Photon error ${code}`;
-    h.onStatus(text);
+    const textMsg = msg || `Photon error ${code}`;
+    h.onStatus(textMsg);
     if (debug) console.warn("[photon]", code, msg);
-    if (!closed) roomRetry.schedule();
+    // Don't force an extra reconnect here — onStateChange(Disconnected) already does.
   };
   client.onActorJoin = (actor?: { actorNr: number }) => {
     h.onCount(client.myRoomActorCount());
@@ -355,8 +343,6 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   client.onActorLeave = (actor: { actorNr: number }) => {
     h.onLeave(actor.actorNr);
     h.onCount(client.myRoomActorCount());
-    // Flush edits when the last peer may be leaving so the room property is up to date.
-    writeRoomEdits();
   };
   client.onMyRoomPropertiesChange = () => {
     publish(readRoom(), false);
