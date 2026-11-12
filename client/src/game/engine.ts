@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo } from "./blocks";
+import { spawnHerd, updateMob, hitMob, disposeMob, mobDrop, mobName, type Mob } from "./mobs";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
@@ -22,6 +23,7 @@ export interface HudState {
   hurt: number;
   dead: boolean;
   flying: boolean;
+  tip: string;
 }
 
 export interface EngineOpts {
@@ -113,6 +115,12 @@ export class Engine {
   private flyLift = 0;
   private stepDist = 0;
   private mineSfxT = 0;
+  private mobs: Mob[] = [];
+  private furnaceProgress = 0;
+  private furnaceTarget: { x: number; y: number; z: number } | null = null;
+  private smeltMsg = "";
+  private smeltMsgT = 0;
+
   signs = new Map<string, SignData>();
   private signObjs = new Map<string, SignObject>();
   private signT = 0;
@@ -165,6 +173,9 @@ export class Engine {
     // Don't spawn inside terrain after loading a save.
     for (let i = 0; i < 64 && overlaps(this.world, this.pos.x, this.pos.y, this.pos.z); i++) this.pos.y += 1;
     this.syncChunks(true);
+    // Passive animals near spawn / player start.
+    this.mobs = spawnHerd(this.world, this.pos, 10);
+    for (const m of this.mobs) this.scene.add(m.group);
     this.bindInput(host);
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -426,6 +437,8 @@ export class Engine {
     for (const a of [...this.remotes.keys()]) this.removeRemote(a);
     for (const g of this.ghosts.values()) { this.scene.remove(g); disposePlayer(g); }
     this.ghosts.clear();
+    for (const m of this.mobs) { this.scene.remove(m.group); disposeMob(m); }
+    this.mobs = [];
     this.mats.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -619,6 +632,7 @@ export class Engine {
       hurt: this.hurt,
       dead: this.dead,
       flying: this.flying,
+      tip: this.smeltMsgT > 0 ? this.smeltMsg : "",
     });
   }
 
@@ -829,8 +843,51 @@ export class Engine {
     const key = `${Math.floor(this.pos.x / CS)},${Math.floor(this.pos.z / CS)}`;
     if (key !== this.lastChunk) { this.lastChunk = key; this.syncChunks(); }
 
+    // Passive mobs
+    this.updateMobs(dt);
+    this.smeltMsgT = Math.max(0, this.smeltMsgT - dt);
+
     this.interact(dt);
   }
+
+  private updateMobs(dt: number) {
+    const keep: Mob[] = [];
+    for (const m of this.mobs) {
+      if (!updateMob(m, this.world, dt, this.pos)) {
+        this.scene.remove(m.group);
+        disposeMob(m);
+        continue;
+      }
+      keep.push(m);
+    }
+    this.mobs = keep;
+  }
+
+  /** Put an item into the first empty hotbar slot, or replace the selected slot. */
+  private giveItem(id: number) {
+    for (let i = 0; i < 9; i++) {
+      if (!this.hotbar[i] || this.hotbar[i] === 0) {
+        this.hotbar[i] = id;
+        this.emit();
+        return;
+      }
+    }
+    this.hotbar[this.selected] = id;
+    this.emit();
+  }
+
+  /** True if any hotbar slot holds coal. Consumes one (sets slot empty). */
+  private consumeCoal(): boolean {
+    for (let i = 0; i < 9; i++) {
+      if (this.hotbar[i] === COAL) {
+        this.hotbar[i] = 0;
+        this.emit();
+        return true;
+      }
+    }
+    return false;
+  }
+
 
   private interact(dt: number) {
     const w = this.world;
@@ -848,9 +905,45 @@ export class Engine {
     this.mineCd -= dt;
     this.placeCd -= dt;
 
+    // --- hit mobs with left click (priority over blocks when aiming at one) ---
+    let aimedMob: Mob | null = null;
+    {
+      const reach = 4.5;
+      let best = reach;
+      for (const m of this.mobs) {
+        if (m.dead) continue;
+        const mx = m.pos.x - ex, my = m.pos.y + 0.4 - ey, mz = m.pos.z - ez;
+        const t = mx * dx + my * dy + mz * dz;
+        if (t < 0.3 || t > best) continue;
+        const px = ex + dx * t, py = ey + dy * t, pz = ez + dz * t;
+        if (Math.hypot(px - m.pos.x, py - (m.pos.y + 0.4), pz - m.pos.z) < 0.7) {
+          best = t;
+          aimedMob = m;
+        }
+      }
+    }
+
     this.fxMining = false;
     this.fxProgress = 0;
-    if (this.mineHeld && hit) {
+    if (this.mineHeld && aimedMob && this.mineCd <= 0) {
+      this.fx.swingOnce();
+      const held = this.hotbar[this.selected] ?? 0;
+      const info = itemInfo(held);
+      const dmg = info.kind === "sword" ? (info.dmg ?? 4) : 2;
+      const died = hitMob(aimedMob, dmg);
+      sfx.hurt();
+      this.mineCd = 0.35;
+      this.fxMining = true;
+      if (died) {
+        const drop = mobDrop(aimedMob.kind);
+        this.giveItem(drop);
+        this.smeltMsg = `${mobName(aimedMob.kind)} → ${itemInfo(drop).name}`;
+        this.smeltMsgT = 2.5;
+        this.scene.remove(aimedMob.group);
+        disposeMob(aimedMob);
+        this.mobs = this.mobs.filter((x) => x !== aimedMob);
+      }
+    } else if (this.mineHeld && hit && !aimedMob) {
       const id = w.get(hit.x, hit.y, hit.z);
       const def = block(id);
       const tk = `${hit.x},${hit.y},${hit.z}`;
@@ -873,46 +966,88 @@ export class Engine {
       }
     } else this.mineProgress = 0;
 
-    if ((this.placeQueued || this.placeHeld) && this.placeCd <= 0 && hit) {
+    // --- furnace smelting: hold right-click on furnace while holding raw meat + coal in hotbar ---
+    if (hit && w.get(hit.x, hit.y, hit.z) === FURNACE && (this.placeHeld || this.placeQueued)) {
       this.placeQueued = false;
-      const target = w.get(hit.x, hit.y, hit.z);
-      if (target === SIGN) {
-        // Using a sign opens its editor instead of placing next to it.
-        this.placeQueued = false;
-        this.placeHeld = false;
-        this.placeCd = 0.4;
-        this.openSign(hit.x, hit.y, hit.z);
-        return;
-      }
-      const px = isReplaceable(target) ? hit.x : hit.x + hit.faceX;
-      const py = isReplaceable(target) ? hit.y : hit.y + hit.faceY;
-      const pz = isReplaceable(target) ? hit.z : hit.z + hit.faceZ;
-      const id = this.hotbar[this.selected]!;
-      const def = block(id);
-      const supported = id !== SIGN || w.solid(px, py - 1, pz);
-      if (id > 0 && id < 100 && supported && isReplaceable(w.get(px, py, pz)) && py >= 0) {
-        const blocks = def.solid &&
-          this.pos.x - HALF_W < px + 1 && this.pos.x + HALF_W > px &&
-          this.pos.z - HALF_W < pz + 1 && this.pos.z + HALF_W > pz &&
-          this.pos.y < py + 1 && this.pos.y + HEIGHT > py;
-        if (!blocks) {
-          w.set(px, py, pz, id);
-          this.markEdit(px, pz);
-          sfx.block(id, "place");
-          this.fx.swingOnce();
-          this.onLocalBlock?.(px, py, pz, id);
-          this.placeCd = 0.22;
-          if (id === SIGN) {
-            // Face the board towards the player, snapped to 22.5 degrees, then let them write on it.
-            const snap = Math.PI / 8;
-            this.signs.set(signKey(px, py, pz), { x: px, y: py, z: pz, yaw: Math.round(this.yaw / snap) * snap, text: "" });
-            this.onLocalSign?.({ ...this.signs.get(signKey(px, py, pz))! });
-            this.syncSigns();
-            this.openSign(px, py, pz);
+      const held = this.hotbar[this.selected] ?? 0;
+      const cooked = SMELT[held];
+      const key = `${hit.x},${hit.y},${hit.z}`;
+      if (cooked) {
+        if (!this.furnaceTarget || this.furnaceTarget.x !== hit.x || this.furnaceTarget.y !== hit.y || this.furnaceTarget.z !== hit.z) {
+          this.furnaceTarget = { x: hit.x, y: hit.y, z: hit.z };
+          this.furnaceProgress = 0;
+        }
+        // Need coal somewhere in the hotbar
+        const hasCoal = this.hotbar.some((id) => id === COAL);
+        if (!hasCoal) {
+          this.smeltMsg = "Need coal in hotbar";
+          this.smeltMsgT = 1.5;
+          this.furnaceProgress = 0;
+        } else {
+          this.furnaceProgress += dt;
+          this.fxProgress = Math.min(1, this.furnaceProgress / 2.4);
+          this.fxMining = true;
+          if (this.furnaceProgress >= 2.4) {
+            if (this.consumeCoal()) {
+              this.hotbar[this.selected] = cooked;
+              this.emit();
+              this.smeltMsg = `Cooked → ${itemInfo(cooked).name}`;
+              this.smeltMsgT = 2.5;
+              sfx.block(FURNACE, "place");
+            }
+            this.furnaceProgress = 0;
+            this.placeCd = 0.4;
           }
         }
+      } else {
+        this.smeltMsg = "Hold raw meat to cook";
+        this.smeltMsgT = 1.2;
+        this.furnaceProgress = 0;
       }
-    } else this.placeQueued = false;
+      // Don't also place a block while using the furnace
+    } else {
+      this.furnaceProgress = 0;
+      this.furnaceTarget = null;
+
+      if ((this.placeQueued || this.placeHeld) && this.placeCd <= 0 && hit) {
+        this.placeQueued = false;
+        const target = w.get(hit.x, hit.y, hit.z);
+        if (target === SIGN) {
+          this.placeQueued = false;
+          this.placeHeld = false;
+          this.placeCd = 0.4;
+          this.openSign(hit.x, hit.y, hit.z);
+          return;
+        }
+        const px = isReplaceable(target) ? hit.x : hit.x + hit.faceX;
+        const py = isReplaceable(target) ? hit.y : hit.y + hit.faceY;
+        const pz = isReplaceable(target) ? hit.z : hit.z + hit.faceZ;
+        const id = this.hotbar[this.selected]!;
+        const def = block(id);
+        const supported = id !== SIGN || w.solid(px, py - 1, pz);
+        if (id > 0 && id < 100 && supported && isReplaceable(w.get(px, py, pz)) && py >= 0) {
+          const blocks = def.solid &&
+            this.pos.x - HALF_W < px + 1 && this.pos.x + HALF_W > px &&
+            this.pos.z - HALF_W < pz + 1 && this.pos.z + HALF_W > pz &&
+            this.pos.y < py + 1 && this.pos.y + HEIGHT > py;
+          if (!blocks) {
+            w.set(px, py, pz, id);
+            this.markEdit(px, pz);
+            sfx.block(id, "place");
+            this.fx.swingOnce();
+            this.onLocalBlock?.(px, py, pz, id);
+            this.placeCd = 0.22;
+            if (id === SIGN) {
+              const snap = Math.PI / 8;
+              this.signs.set(signKey(px, py, pz), { x: px, y: py, z: pz, yaw: Math.round(this.yaw / snap) * snap, text: "" });
+              this.onLocalSign?.({ ...this.signs.get(signKey(px, py, pz))! });
+              this.syncSigns();
+              this.openSign(px, py, pz);
+            }
+          }
+        }
+      } else this.placeQueued = false;
+    }
   }
 
   private breakBlock(x: number, y: number, z: number) {

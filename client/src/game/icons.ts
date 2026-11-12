@@ -88,15 +88,20 @@ function itemIcon(g: CanvasRenderingContext2D, id: number) {
   } else if (id === 103) {
     line(3, 14, 12, 4, wood);
     line(4, 14, 13, 4, "#6d5129");
-  } else if (id === 104) {
+  } else if (it.kind === "food") {
+    // Meat / cooked meat hunk
     g.fillStyle = it.color;
     g.fillRect(8, 10, 16, 14);
     g.fillRect(6, 14, 4, 8);
-    g.fillStyle = "#f2d6c4";
+    g.fillStyle = it.name.startsWith("Cooked") ? "#5a3018" : "#f2d6c4";
     g.fillRect(20, 6, 8, 6);
     g.fillRect(22, 4, 6, 4);
     g.fillStyle = "#00000033";
     g.fillRect(8, 20, 16, 4);
+    if (it.name.startsWith("Cooked")) {
+      g.fillStyle = "#ffffff33";
+      g.fillRect(10, 12, 6, 2);
+    }
   } else {
     // Coal / iron / gold lumps and ingots.
     const rows = [[6, 12], [4, 14], [3, 15], [3, 15], [4, 14], [6, 12]];

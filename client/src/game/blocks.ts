@@ -24,14 +24,21 @@ export const TALL_GRASS = 22;
 export const GOLD_BLOCK = 23;
 export const PINE_LEAVES = 24;
 export const SIGN = 25;
-export const LAST_BLOCK = 25;
+export const FURNACE = 26;
+export const LAST_BLOCK = 26;
 
 // Non-block items
 export const COAL = 100;
 export const IRON = 101;
 export const GOLD = 102;
 export const STICK = 103;
-export const MEAT = 104;
+export const MEAT = 104; // legacy generic raw meat (treated as beef)
+export const RAW_PORK = 105;
+export const COOKED_PORK = 106;
+export const RAW_BEEF = 107;
+export const COOKED_BEEF = 108;
+export const RAW_CHICKEN = 109;
+export const COOKED_CHICKEN = 116;
 export const PICK_WOOD = 110;
 export const PICK_STONE = 111;
 export const PICK_IRON = 112;
@@ -47,7 +54,7 @@ export const T = {
   GRASS_TOP: 0, GRASS_SIDE: 1, DIRT: 2, STONE: 3, LOG_SIDE: 4, LOG_TOP: 5, LEAVES: 6, SAND: 7,
   COBBLE: 8, WATER: 9, PLANKS: 10, GLASS: 11, BRICK: 12, SNOW: 13, SNOW_SIDE: 14, COAL: 15,
   IRON: 16, GOLD: 17, BASALT: 18, LANTERN: 19, WOOL: 20, CACTUS_SIDE: 21, CACTUS_TOP: 22,
-  FLOWER_RED: 23, FLOWER_YELLOW: 24, TALL_GRASS: 25, GOLD_BLOCK: 26, PINE_LEAVES: 27,
+  FLOWER_RED: 23, FLOWER_YELLOW: 24, TALL_GRASS: 25, GOLD_BLOCK: 26, PINE_LEAVES: 27, FURNACE: 28,
 } as const;
 
 export interface BlockDef {
@@ -108,6 +115,7 @@ reg(TALL_GRASS, "Tall Grass", "#4f9a3a", T.TALL_GRASS, { solid: false, opaque: f
 reg(GOLD_BLOCK, "Gold Block", "#f2c744", T.GOLD_BLOCK, { hardness: 3, pick: true });
 reg(SIGN, "Sign", "#b88b52", T.PLANKS, { solid: false, opaque: false, invisible: true, hardness: 0.3 });
 reg(PINE_LEAVES, "Pine Needles", "#27603a", T.PINE_LEAVES, { hardness: 0.25, drop: null });
+reg(FURNACE, "Furnace", "#6a6a70", T.FURNACE, { hardness: 3.0, pick: true });
 
 export const BLOCKS = DEFS;
 export function block(id: number): BlockDef {
@@ -132,13 +140,27 @@ const ITEMS: Record<number, ItemDef> = {
   [IRON]: { id: IRON, name: "Iron", color: "#d9b9a0", kind: "material" },
   [GOLD]: { id: GOLD, name: "Gold", color: "#f5d442", kind: "material" },
   [STICK]: { id: STICK, name: "Stick", color: "#8a6a3c", kind: "material" },
-  [MEAT]: { id: MEAT, name: "Meat", color: "#c9574a", kind: "food", heal: 6 },
+  [MEAT]: { id: MEAT, name: "Raw Beef", color: "#c9574a", kind: "food", heal: 3 },
+  [RAW_PORK]: { id: RAW_PORK, name: "Raw Pork", color: "#e08a8a", kind: "food", heal: 3 },
+  [COOKED_PORK]: { id: COOKED_PORK, name: "Cooked Pork", color: "#c46a3a", kind: "food", heal: 8 },
+  [RAW_BEEF]: { id: RAW_BEEF, name: "Raw Beef", color: "#b83c3c", kind: "food", heal: 3 },
+  [COOKED_BEEF]: { id: COOKED_BEEF, name: "Cooked Beef", color: "#8a3a20", kind: "food", heal: 8 },
+  [RAW_CHICKEN]: { id: RAW_CHICKEN, name: "Raw Chicken", color: "#e8c9a0", kind: "food", heal: 2 },
+  [COOKED_CHICKEN]: { id: COOKED_CHICKEN, name: "Cooked Chicken", color: "#d4a05a", kind: "food", heal: 6 },
   [PICK_WOOD]: { id: PICK_WOOD, name: "Wood Pickaxe", color: "#b88b52", kind: "pick", speed: 2.2 },
   [PICK_STONE]: { id: PICK_STONE, name: "Stone Pickaxe", color: "#9a9aa0", kind: "pick", speed: 3.6 },
   [PICK_IRON]: { id: PICK_IRON, name: "Iron Pickaxe", color: "#e6cdbb", kind: "pick", speed: 5.8 },
   [SWORD_WOOD]: { id: SWORD_WOOD, name: "Wood Sword", color: "#b88b52", kind: "sword", dmg: 4 },
   [SWORD_STONE]: { id: SWORD_STONE, name: "Stone Sword", color: "#9a9aa0", kind: "sword", dmg: 5 },
   [SWORD_IRON]: { id: SWORD_IRON, name: "Iron Sword", color: "#e6cdbb", kind: "sword", dmg: 7 },
+};
+
+/** Raw food that a furnace can cook, and what it becomes. */
+export const SMELT: Record<number, number> = {
+  [MEAT]: COOKED_BEEF,
+  [RAW_PORK]: COOKED_PORK,
+  [RAW_BEEF]: COOKED_BEEF,
+  [RAW_CHICKEN]: COOKED_CHICKEN,
 };
 
 export function itemInfo(id: number): ItemDef {
@@ -150,7 +172,11 @@ export function itemInfo(id: number): ItemDef {
 
 export const CREATIVE_PALETTE: number[] = [];
 for (let i = 1; i <= LAST_BLOCK; i++) if (i !== WATER && i !== BASALT) CREATIVE_PALETTE.push(i);
-CREATIVE_PALETTE.push(COAL, IRON, GOLD, STICK, MEAT, PICK_WOOD, PICK_STONE, PICK_IRON, SWORD_WOOD, SWORD_STONE, SWORD_IRON);
+CREATIVE_PALETTE.push(
+  COAL, IRON, GOLD, STICK,
+  MEAT, RAW_PORK, COOKED_PORK, RAW_BEEF, COOKED_BEEF, RAW_CHICKEN, COOKED_CHICKEN,
+  PICK_WOOD, PICK_STONE, PICK_IRON, SWORD_WOOD, SWORD_STONE, SWORD_IRON,
+);
 
 export interface Recipe {
   out: [number, number];
@@ -172,4 +198,5 @@ export const RECIPES: Recipe[] = [
   { out: [SWORD_IRON, 1], inp: [[IRON, 2], [STICK, 1]] },
   { out: [GOLD_BLOCK, 1], inp: [[GOLD, 4]] },
   { out: [WOOL, 1], inp: [[TALL_GRASS, 4]] },
+  { out: [FURNACE, 1], inp: [[COBBLE, 8]] },
 ];

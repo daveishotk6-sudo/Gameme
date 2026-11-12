@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Engine, type HudState } from "./engine";
-import { block, CREATIVE_PALETTE } from "./blocks";
+import { block, CREATIVE_PALETTE, itemInfo } from "./blocks";
 import { loadSave } from "./save";
 import { iconURL } from "./icons";
 import { SIGN_COLS, SIGN_LINES, type SignData } from "./signs";
@@ -116,6 +116,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
 
       {hud && hud.hurt > 0 && <div key={hud.hurt} className="hurt-flash" />}
 
+      {hud?.tip && <div className="tip">{hud.tip}</div>}
+
       <div className="vitals">
         <div className="hearts" aria-label={`Health ${hud?.health ?? 20} of 20`}>
           {Array.from({ length: 10 }, (_, i) => {
@@ -193,10 +195,10 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
       {picker && (
         <div className="pause" onClick={() => setPicker(false)}>
           <div className="card picker" onClick={(ev) => ev.stopPropagation()}>
-            <h2>Pick a block</h2>
+            <h2>Pick a block / item</h2>
             <div className="grid">
-              {CREATIVE_PALETTE.filter((id) => id < 100).map((id) => (
-                <button key={id} type="button" className="slot" title={block(id).name}
+              {CREATIVE_PALETTE.map((id) => (
+                <button key={id} type="button" className="slot" title={itemInfo(id).name}
                   onClick={() => { e()?.setHotbar(hud?.selected ?? 0, id); setPicker(false); }}>
                   <img src={iconURL(id)} alt="" draggable={false} />
                 </button>

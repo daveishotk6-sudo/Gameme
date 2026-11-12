@@ -96,6 +96,20 @@ const painters: Record<number, (x: number, y: number) => RGBA> = {
     return shade(x + y < 9 ? "#fbe27a" : "#f2c744", 0.1, x, y, 39);
   },
   [T.PINE_LEAVES]: (x, y) => shade(nse(x, y, 40) > 0.6 ? "#357a4a" : "#1f5330", 0.18, x, y, 41),
+  [T.FURNACE]: (x, y) => {
+    // Stone body with a dark mouth in the middle and a top plate.
+    if (y <= 2) return shade("#5a5a60", 0.12, x, y, 80);
+    if (y >= 13) return shade("#7a7a82", 0.1, x, y, 81);
+    const mouth = x >= 4 && x <= 11 && y >= 5 && y <= 11;
+    if (mouth) {
+      // Glowing embers in the lower mouth.
+      if (y >= 9 && nse(x, y, 82) > 0.55) return shade("#e07030", 0.2, x, y, 83);
+      return shade("#1a1a1e", 0.15, x, y, 84);
+    }
+    // Frame / corners a bit darker.
+    if (x <= 1 || x >= 14) return shade("#4a4a50", 0.12, x, y, 85);
+    return shade(nse(x, y, 86) > 0.7 ? "#6e6e76" : "#5c5c64", 0.12, x, y, 87);
+  },
 };
 
 function ore(base: number, hex: string, salt: number) {
