@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo } from "./blocks";
-import { spawnHerd, updateMob, hitMob, disposeMob, mobDrop, mobName, type Mob } from "./mobs";
+import { spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, type Mob } from "./mobs";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
@@ -116,6 +116,7 @@ export class Engine {
   private stepDist = 0;
   private mineSfxT = 0;
   private mobs: Mob[] = [];
+  private mobTopUpT = 0;
   private furnaceProgress = 0;
   private furnaceTarget: { x: number; y: number; z: number } | null = null;
   private smeltMsg = "";
@@ -173,9 +174,10 @@ export class Engine {
     // Don't spawn inside terrain after loading a save.
     for (let i = 0; i < 64 && overlaps(this.world, this.pos.x, this.pos.y, this.pos.z); i++) this.pos.y += 1;
     this.syncChunks(true);
-    // Passive animals near spawn / player start.
-    this.mobs = spawnHerd(this.world, this.pos, 10);
+    // Dense passive animals near the player so they're visible immediately.
+    this.mobs = spawnHerd(this.world, this.pos, 36);
     for (const m of this.mobs) this.scene.add(m.group);
+    this.mobTopUpT = 0;
     this.bindInput(host);
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -853,7 +855,9 @@ export class Engine {
   private updateMobs(dt: number) {
     const keep: Mob[] = [];
     for (const m of this.mobs) {
-      if (!updateMob(m, this.world, dt, this.pos)) {
+      // Cull animals that wandered very far away so we can respawn near the player.
+      const far = Math.hypot(m.pos.x - this.pos.x, m.pos.z - this.pos.z) > 64;
+      if (far || !updateMob(m, this.world, dt, this.pos)) {
         this.scene.remove(m.group);
         disposeMob(m);
         continue;
@@ -861,6 +865,17 @@ export class Engine {
       keep.push(m);
     }
     this.mobs = keep;
+
+    // Keep the area stocked with animals.
+    this.mobTopUpT -= dt;
+    if (this.mobTopUpT <= 0) {
+      this.mobTopUpT = 4;
+      const added = topUpMobs(this.world, this.mobs, this.pos, 30);
+      for (const m of added) {
+        this.scene.add(m.group);
+        this.mobs.push(m);
+      }
+    }
   }
 
   /** Put an item into the first empty hotbar slot, or replace the selected slot. */

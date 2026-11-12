@@ -189,28 +189,62 @@ export function hitMob(m: Mob, dmg: number): boolean {
   return false;
 }
 
-/** Spawn a small herd near a point on solid ground. */
-export function spawnHerd(world: World, origin: { x: number; y: number; z: number }, count = 8): Mob[] {
-  const kinds: MobKind[] = ["pig", "pig", "cow", "cow", "chicken", "chicken", "chicken", "pig"];
+/**
+ * Spawn animals near a point. Very dense by default so the world feels populated.
+ * Forces chunks under each candidate so solid() works even at the edge of the stream.
+ */
+export function spawnHerd(world: World, origin: { x: number; y: number; z: number }, count = 40): Mob[] {
+  const kinds: MobKind[] = [
+    "pig", "pig", "pig", "cow", "cow", "cow",
+    "chicken", "chicken", "chicken", "chicken", "pig", "chicken",
+  ];
   const out: Mob[] = [];
   for (let i = 0; i < count; i++) {
     const kind = kinds[i % kinds.length]!;
     let placed = false;
-    for (let tryN = 0; tryN < 20 && !placed; tryN++) {
+    for (let tryN = 0; tryN < 40 && !placed; tryN++) {
       const ang = Math.random() * Math.PI * 2;
-      const r = 6 + Math.random() * 18;
+      // Many close, some a bit further — majority within ~8 blocks.
+      const r = tryN < 12
+        ? 1.5 + Math.random() * 6
+        : 4 + Math.random() * 14;
       const x = origin.x + Math.cos(ang) * r;
       const z = origin.z + Math.sin(ang) * r;
-      // Find ground
-      let y = Math.floor(origin.y) + 8;
-      while (y > 0 && !world.solid(Math.floor(x), y - 1, Math.floor(z))) y--;
-      if (y <= 1) continue;
+      // Ensure the chunk exists so solid() is real terrain, not AIR.
+      world.ensure(Math.floor(x / 16), Math.floor(z / 16));
+      // Scan down from well above the player for solid ground.
+      let y = Math.max(Math.floor(origin.y) + 12, 40);
+      let found = false;
+      for (; y > 2; y--) {
+        if (world.solid(Math.floor(x), y - 1, Math.floor(z)) && !world.solid(Math.floor(x), y, Math.floor(z))) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) continue;
       if (overlaps(world, x, y, z, 0.3, 0.9)) continue;
-      out.push(createMob(kind, x, y + 0.05, z));
+      out.push(createMob(kind, x + (Math.random() - 0.5) * 0.3, y + 0.05, z + (Math.random() - 0.5) * 0.3));
       placed = true;
     }
   }
   return out;
+}
+
+/** Top up animals around the player when the local population is low. */
+export function topUpMobs(
+  world: World,
+  existing: Mob[],
+  origin: { x: number; y: number; z: number },
+  target = 28,
+): Mob[] {
+  const nearby = existing.filter((m) => {
+    if (m.dead) return false;
+    const d = Math.hypot(m.pos.x - origin.x, m.pos.z - origin.z);
+    return d < 40;
+  });
+  const need = target - nearby.length;
+  if (need <= 0) return [];
+  return spawnHerd(world, origin, need);
 }
 
 export function disposeMob(m: Mob) {
