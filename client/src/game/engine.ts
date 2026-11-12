@@ -903,17 +903,26 @@ export class Engine {
     this.mobs = [];
 
     this.world.setDim(dim);
-    // Safe footing near current XZ
-    const x = this.pos.x;
-    const z = this.pos.z;
-    this.world.stream(x, z, this.rd + 1);
-    let y = 32;
-    for (let yy = WH - 4; yy > 2; yy--) {
-      if (this.world.solid(Math.floor(x), yy - 1, Math.floor(z)) && !this.world.solid(Math.floor(x), yy, Math.floor(z))) {
-        y = yy + 0.05;
-        break;
+    let x = this.pos.x;
+    let y = this.pos.y;
+    let z = this.pos.z;
+    if (dim === 0) {
+      // Fixed overworld exit from the Nether
+      x = 7.5;
+      y = 29.05;
+      z = 125.5;
+    } else {
+      // Entering nether: keep XZ, find safe footing
+      this.world.stream(x, z, this.rd + 1);
+      y = 32;
+      for (let yy = WH - 4; yy > 2; yy--) {
+        if (this.world.solid(Math.floor(x), yy - 1, Math.floor(z)) && !this.world.solid(Math.floor(x), yy, Math.floor(z))) {
+          y = yy + 0.05;
+          break;
+        }
       }
     }
+    this.world.stream(x, z, this.rd + 1);
     this.pos.x = x;
     this.pos.y = y;
     this.pos.z = z;
