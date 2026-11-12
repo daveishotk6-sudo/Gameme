@@ -9,8 +9,3 @@ build/
 .idea/
 coverage/
 *.tsbuildinfo
-
-# account database (contains password hashes): never commit
-server/data/
-data/
-*.tmp
