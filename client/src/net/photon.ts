@@ -403,7 +403,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   // Apply any locally remembered edits immediately (before Photon connects).
   if (edits.size > 0) {
     // Defer one tick so the engine has finished constructing.
-    queue.setTimeout(() => applyAllToGame(), 0);
+    window.setTimeout(() => applyAllToGame(), 0);
   }
   roomRetry.reset();
   connectRoom();
