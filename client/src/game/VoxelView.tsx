@@ -72,7 +72,17 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
         },
         onBlock: (x, y, z, id) => e.applyRemoteBlock(x, y, z, id),
         onSign: (s) => e.applyRemoteSign(s),
+        onWorld: (edits) => {
+          for (const ed of edits) e.applyRemoteBlock(ed.x, ed.y, ed.z, ed.id);
+        },
       });
+      // Share anything we already built in this room (local save) with the network.
+      try {
+        const flat = e.world.dumpEdits();
+        if (flat.length) link?.pushWorld(flat);
+      } catch {
+        /* ignore */
+      }
     } catch {
       setStatus("Offline");
     }
