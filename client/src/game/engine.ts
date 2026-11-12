@@ -175,7 +175,7 @@ export class Engine {
     for (let i = 0; i < 64 && overlaps(this.world, this.pos.x, this.pos.y, this.pos.z); i++) this.pos.y += 1;
     this.syncChunks(true);
     // Dense passive animals near the player so they're visible immediately.
-    this.mobs = spawnHerd(this.world, this.pos, 36);
+    this.mobs = spawnHerd(this.world, this.pos, 2);
     for (const m of this.mobs) this.scene.add(m.group);
     this.mobTopUpT = 0;
     this.bindInput(host);
@@ -870,7 +870,7 @@ export class Engine {
     this.mobTopUpT -= dt;
     if (this.mobTopUpT <= 0) {
       this.mobTopUpT = 4;
-      const added = topUpMobs(this.world, this.mobs, this.pos, 30);
+      const added = topUpMobs(this.world, this.mobs, this.pos, 2);
       for (const m of added) {
         this.scene.add(m.group);
         this.mobs.push(m);

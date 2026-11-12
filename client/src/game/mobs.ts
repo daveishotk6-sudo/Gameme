@@ -194,7 +194,7 @@ export function hitMob(m: Mob, dmg: number): boolean {
  * Spawn animals near a point. Very dense by default so the world feels populated.
  * Forces chunks under each candidate so solid() works even at the edge of the stream.
  */
-export function spawnHerd(world: World, origin: { x: number; y: number; z: number }, count = 40): Mob[] {
+export function spawnHerd(world: World, origin: { x: number; y: number; z: number }, count = 2): Mob[] {
   const kinds: MobKind[] = [
     "pig", "pig", "pig", "cow", "cow", "cow",
     "chicken", "chicken", "chicken", "chicken", "pig", "chicken",
@@ -236,7 +236,7 @@ export function topUpMobs(
   world: World,
   existing: Mob[],
   origin: { x: number; y: number; z: number },
-  target = 28,
+  target = 2,
 ): Mob[] {
   const nearby = existing.filter((m) => {
     if (m.dead) return false;
