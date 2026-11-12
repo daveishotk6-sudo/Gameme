@@ -296,7 +296,6 @@ export class Engine {
       this.flyLift = 0;
       this.descendHeld = false;
     }
-    sfx.fly(on);
     this.emit();
   }
   toggleFly() {
@@ -355,7 +354,6 @@ export class Engine {
       this.mineHeld = false;
       this.placeHeld = false;
       this.descendHeld = false;
-      sfx.wind(0);
       if (document.pointerLockElement) document.exitPointerLock();
     }
     this.emit();
@@ -670,10 +668,8 @@ export class Engine {
     if (this.grounded && jump && !this.flying) { this.vel.y = 8.6; this.grounded = false; sfx.jump(); }
     if (this.grounded && this.flying && this.flyGrace <= 0) this.setFly(false);
 
-    // Sounds: wind, splashes and footsteps.
+    // Sounds: splashes and footsteps.
     const hs = Math.hypot(this.vel.x, this.vel.z);
-    const speedNow = Math.hypot(this.vel.x, this.vel.y, this.vel.z);
-    sfx.wind(this.flying ? Math.min(1, speedNow / 13) : this.vel.y < -14 ? Math.min(0.9, (-this.vel.y - 12) / 25) : 0);
     if (inWater !== this.wasInWater) {
       this.wasInWater = inWater;
       if (this.elapsed > 1) sfx.splash(Math.min(1, Math.abs(vyBefore) / 12 + 0.25));

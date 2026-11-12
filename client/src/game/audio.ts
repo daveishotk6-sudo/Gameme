@@ -43,6 +43,20 @@ const HIT: Record<Exclude<Mat, "glass" | "water">, NoiseSpec> = {
   snow: { type: "lowpass", f: 2000, q: 0.4, dur: 0.15, g: 0.4 },
 };
 
+/** Footstep sound per surface: low-pass cutoff (Hz), length (s), loudness, optional low thump (Hz). */
+const STEP: Record<Exclude<Mat, "water">, { f: number; dur: number; g: number; body?: number }> = {
+  stone: { f: 900, dur: 0.09, g: 0.28, body: 110 },
+  metal: { f: 1000, dur: 0.09, g: 0.26, body: 120 },
+  glass: { f: 1100, dur: 0.07, g: 0.14 },
+  dirt: { f: 520, dur: 0.1, g: 0.32, body: 80 },
+  grass: { f: 1000, dur: 0.1, g: 0.2 },
+  sand: { f: 1200, dur: 0.11, g: 0.18 },
+  wood: { f: 700, dur: 0.09, g: 0.28, body: 140 },
+  leaf: { f: 1300, dur: 0.1, g: 0.13 },
+  wool: { f: 400, dur: 0.09, g: 0.2 },
+  snow: { f: 850, dur: 0.11, g: 0.18 },
+};
+
 const STORE_KEY = "gameme:sound";
 
 class Sfx {
@@ -50,8 +64,6 @@ class Sfx {
   private master: GainNode | null = null;
   private bus: AudioNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
-  private wind_: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
-  private windOffAt = 0;
   private lastPlayed = new Map<string, number>();
   muted = false;
 
@@ -99,7 +111,6 @@ class Sfx {
       /* ignore */
     }
     if (this.ctx && this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.6, this.ctx.currentTime, 0.02);
-    if (m) this.stopWind();
   }
 
   // ------------------------------------------------------------ helpers
@@ -117,7 +128,7 @@ class Sfx {
     return true;
   }
 
-  private noise(c: AudioContext, t: number, o: { type: BiquadFilterType; f: number; f2?: number; q: number; dur: number; g: number; rate?: number }) {
+  private noise(c: AudioContext, t: number, o: { type: BiquadFilterType; f: number; f2?: number; q: number; dur: number; g: number; rate?: number; attack?: number }) {
     const src = c.createBufferSource();
     src.buffer = this.noiseBuf;
     src.playbackRate.value = o.rate ?? 1;
@@ -129,7 +140,7 @@ class Sfx {
     const e = c.createGain();
     const g = Math.max(0.0002, o.g);
     e.gain.setValueAtTime(0.0001, t);
-    e.gain.exponentialRampToValueAtTime(g, t + 0.004);
+    e.gain.exponentialRampToValueAtTime(g, t + (o.attack ?? 0.004));
     e.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
     src.connect(f);
     f.connect(e);
@@ -190,22 +201,17 @@ class Sfx {
     }
   }
 
+  /** Footsteps: low-passed, slow-attack thuds so they sound muffled rather than sharp. */
   step(mat: Mat, running = false) {
     const c = this.ready();
     if (!c || !this.gate("step", 110)) return;
     const t = c.currentTime;
     if (mat === "water") return this.swim();
-    if (mat === "glass") {
-      this.tone(c, t, { type: "triangle", f: 2600 + Math.random() * 600, dur: 0.05, g: 0.05 });
-      return;
-    }
-    const p = HIT[mat];
-    const k = running ? 0.42 : 0.3;
-    this.noise(c, t, {
-      type: p.type, f: p.f * (0.85 + Math.random() * 0.3), q: p.q, dur: 0.07 + p.dur * 0.3, g: p.g * k,
-      rate: 0.9 + Math.random() * 0.25,
-    });
-    if (p.body) this.tone(c, t, { type: "sine", f: p.body * 0.8, f2: p.body * 0.5, dur: 0.07, g: 0.12 * k });
+    const p = STEP[mat];
+    const k = running ? 1.15 : 1;
+    const vary = 0.88 + Math.random() * 0.24;
+    this.noise(c, t, { type: "lowpass", f: p.f * vary, q: 0.3, dur: p.dur, g: p.g * k, rate: 0.7 + Math.random() * 0.2, attack: 0.014 });
+    if (p.body) this.tone(c, t, { type: "sine", f: p.body * vary, f2: p.body * 0.6, dur: 0.09, g: 0.1 * k });
   }
 
   // ------------------------------------------------------------ body sounds
@@ -280,66 +286,10 @@ class Sfx {
 
   // ------------------------------------------------------------ misc
 
-  /** Whoosh when fly mode turns on (rising) or off (falling). */
-  fly(on: boolean) {
-    const c = this.ready();
-    if (!c) return;
-    const t = c.currentTime;
-    this.noise(c, t, { type: "bandpass", f: on ? 400 : 1600, f2: on ? 1800 : 350, q: 0.9, dur: 0.32, g: 0.2 });
-    this.tone(c, t, { type: "sine", f: on ? 300 : 620, f2: on ? 640 : 280, dur: 0.22, g: 0.07 });
-  }
-
   click() {
     const c = this.ready();
     if (!c || !this.gate("click", 40)) return;
     this.tone(c, c.currentTime, { type: "triangle", f: 900, f2: 650, dur: 0.045, g: 0.08 });
-  }
-
-  /** Continuous wind; `level` 0..1 (flying fast, falling). Call every frame. */
-  wind(level: number) {
-    const c = this.ready();
-    if (!c) {
-      this.stopWind();
-      return;
-    }
-    if (level > 0.02) {
-      this.windOffAt = 0;
-      if (!this.wind_) {
-        const src = c.createBufferSource();
-        src.buffer = this.noiseBuf;
-        src.loop = true;
-        const f = c.createBiquadFilter();
-        f.type = "bandpass";
-        f.frequency.value = 520;
-        f.Q.value = 0.4;
-        const gain = c.createGain();
-        gain.gain.value = 0;
-        src.connect(f);
-        f.connect(gain);
-        gain.connect(this.bus!);
-        src.start();
-        this.wind_ = { src, gain };
-      }
-      this.wind_.gain.gain.setTargetAtTime(Math.min(1, level) * 0.16, c.currentTime, 0.25);
-    } else if (this.wind_) {
-      this.wind_.gain.gain.setTargetAtTime(0, c.currentTime, 0.2);
-      const now = performance.now();
-      if (!this.windOffAt) this.windOffAt = now;
-      else if (now - this.windOffAt > 1500) this.stopWind();
-    }
-  }
-
-  private stopWind() {
-    if (!this.wind_) return;
-    try {
-      this.wind_.src.stop();
-    } catch {
-      /* already stopped */
-    }
-    this.wind_.src.disconnect();
-    this.wind_.gain.disconnect();
-    this.wind_ = null;
-    this.windOffAt = 0;
   }
 }
 
