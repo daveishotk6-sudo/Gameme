@@ -13,7 +13,7 @@ const EV_WORLD = 4;
 /** Max block edits kept in the shared room property / local backup. */
 const MAX_EDITS = 2500;
 /** Keep empty Photon rooms alive so builds survive while nobody is online. */
-const EMPTY_ROOM_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const EMPTY_ROOM_TTL_MS = 10 * 60 * 1000; // 10 minutes (Photon cloud limit-friendly)
 
 export type Ghost = { x: number; y: number; z: number; yaw: number; t: number };
 export type Ghosts = Record<string, Ghost>;
@@ -116,6 +116,9 @@ function trimMap(m: Map<string, WorldEdit>, max = MAX_EDITS) {
 }
 
 export function connectPhoton(room: string, name: string, h: Handlers): PhotonLink {
+  if (!Photon?.LoadBalancing?.LoadBalancingClient) {
+    throw new Error("Photon SDK failed to load");
+  }
   const safe = room.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24) || "world";
   const debug = /[?&]debug\b/.test(window.location.search);
   let closed = false;
@@ -129,10 +132,23 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   const cache = Photon.LoadBalancing.Constants.EventCaching.AddToRoomCache;
   const client = new LBC(Photon.ConnectionProtocol.Wss, PUN_APP_ID, "1.0");
   if (debug) client.setLogLevel(Photon.LogLevel.INFO);
+  else client.setLogLevel(Photon.LogLevel.ERROR);
 
+  // Try several regions — a single hard-coded region can look like "offline" when that
+  // cluster is unreachable from the player's network.
+  const REGIONS = [REGION, "us", "eu", "asia", "sa", "jp", "au"];
+  let regionIdx = 0;
   const connectRoom = (): boolean => {
-    client.setUserId(newUserId());
-    return !!client.connectToRegionMaster(REGION);
+    try {
+      client.setUserId(newUserId());
+      const region = REGIONS[regionIdx % REGIONS.length]!;
+      regionIdx++;
+      h.onStatus(`Connecting (${region})`);
+      return !!client.connectToRegionMaster(region);
+    } catch (err) {
+      h.onStatus(String((err as Error)?.message || err));
+      return false;
+    }
   };
   const roomRetry = makeRetry(connectRoom, isClosed);
   let clockSeen = false;
@@ -306,12 +322,24 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
       joinedOnce = true;
     }
     if (state === LBC.State.Error || state === LBC.State.Disconnected) {
-      h.onStatus(closed ? label : "Reconnecting");
-      roomRetry.schedule();
-    } else if (state !== LBC.State.Joined) h.onStatus("Connecting");
-    else h.onStatus("");
+      if (!closed) {
+        h.onStatus("Reconnecting…");
+        roomRetry.schedule();
+      } else h.onStatus(label);
+    } else if (state === LBC.State.Joined) {
+      /* status cleared below path already */
+    } else if (state !== LBC.State.Joined) {
+      const pretty = LBC.StateToName?.(state) || "Connecting";
+      h.onStatus(pretty === "Joined" ? "" : pretty);
+    }
+    if (state === LBC.State.Joined) h.onStatus("");
   };
-  client.onError = (_code: number, msg: string) => h.onStatus(msg || "Photon error");
+  client.onError = (code: number, msg: string) => {
+    const text = msg || `Photon error ${code}`;
+    h.onStatus(text);
+    if (debug) console.warn("[photon]", code, msg);
+    if (!closed) roomRetry.schedule();
+  };
   client.onActorJoin = (actor?: { actorNr: number }) => {
     h.onCount(client.myRoomActorCount());
     // When someone new arrives, send them our known world (room cache alone is not enough

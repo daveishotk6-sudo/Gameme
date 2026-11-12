@@ -115,8 +115,9 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
       } catch {
         /* ignore */
       }
-    } catch {
-      setStatus("Offline");
+    } catch (err) {
+      console.error("[photon] connect failed", err);
+      setStatus(err instanceof Error ? err.message : "Offline");
     }
     net.current = link;
     return () => {
