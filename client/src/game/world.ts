@@ -368,12 +368,13 @@ function stepBody(world: World, pos: V3, vel: V3, dt: number, hw: number, h: num
   const y0 = pos.y;
   pos.y += vel.y * dt;
   if (overlaps(world, pos.x, pos.y, pos.z, hw, h)) {
+    const minX = Math.floor(pos.x - hw);
+    const maxX = Math.floor(pos.x + hw);
+    const minZ = Math.floor(pos.z - hw);
+    const maxZ = Math.floor(pos.z + hw);
     if (vel.y <= 0) {
+      // Land on the highest solid whose top is at or just below the previous feet.
       let top = -1;
-      const minX = Math.floor(pos.x - hw);
-      const maxX = Math.floor(pos.x + hw);
-      const minZ = Math.floor(pos.z - hw);
-      const maxZ = Math.floor(pos.z + hw);
       const minY = Math.floor(Math.min(y0, pos.y)) - 1;
       const maxY = Math.floor(Math.max(y0, pos.y) + h);
       for (let bx = minX; bx <= maxX; bx++) {
@@ -390,7 +391,24 @@ function stepBody(world: World, pos: V3, vel: V3, dt: number, hw: number, h: num
       pos.y = top + 0.001;
       grounded = true;
     } else {
-      pos.y = Math.ceil(pos.y + h) - h - 0.001;
+      // Hit a ceiling: snap the player's head just under the lowest solid we penetrated.
+      // The old Math.ceil(pos.y + h) - h approach left residual overlap and could
+      // fling the player underground / far away on the next step.
+      let ceil = Infinity;
+      const minY = Math.floor(Math.min(y0, pos.y));
+      const maxY = Math.floor(Math.max(y0, pos.y) + h) + 1;
+      for (let bx = minX; bx <= maxX; bx++) {
+        for (let bz = minZ; bz <= maxZ; bz++) {
+          for (let by = minY; by <= maxY; by++) {
+            if (world.solid(bx, by, bz) && by >= y0 + 0.05) {
+              ceil = Math.min(ceil, by);
+              break;
+            }
+          }
+        }
+      }
+      if (ceil === Infinity) ceil = Math.ceil(pos.y + h);
+      pos.y = ceil - h - 0.001;
     }
     vel.y = 0;
   }
