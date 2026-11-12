@@ -25,3 +25,11 @@ If the service still crashes, set the start command in Railway to `npm start` an
   - Raw pork → Cooked pork
   - Raw beef → Cooked beef
   - Raw chicken → Cooked chicken
+
+## Permanent worlds (Holder)
+
+Builds are saved to the Railway **Holder** service so they remain after everyone leaves:
+
+`https://holder-production.up.railway.app`
+
+Each room code becomes `data/{room}.json` on that server. Live multiplayer still uses Photon; Holder is the long-term store.

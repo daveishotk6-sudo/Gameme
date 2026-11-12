@@ -6,6 +6,7 @@ import { iconURL } from "./icons";
 import { SIGN_COLS, SIGN_LINES, type SignData } from "./signs";
 import { sfx } from "./audio";
 import { connectPhoton, type Ghosts, type PhotonLink } from "../net/photon";
+import { fetchWorld, makeHolderSync } from "../net/holder";
 
 type Props = { seed: number; room: string; name: string; onExit: () => void };
 
@@ -35,14 +36,48 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
       host: el, seed, save: saved, touch, slot, name, onHud: setHud,
     });
     engine.current = e;
-    e.onLocalBlock = (x, y, z, id) => net.current?.block(x, y, z, id);
+
+    // Permanent world store (Railway Holder) — survives everyone leaving.
+    const holder = makeHolderSync(room);
+    const dumpSigns = (): [number, number, number, number, string][] =>
+      [...e.signs.values()].map((s) => [s.x, s.y, s.z, s.yaw, s.text] as [number, number, number, number, string]);
+    const saveHolder = () => holder.queue(e.world.dumpEdits(), dumpSigns());
+
+    e.onLocalBlock = (x, y, z, id) => {
+      net.current?.block(x, y, z, id);
+      saveHolder();
+    };
     e.onEditSign = (s) => {
       setSign(s);
       setSignText(s.text);
     };
-    e.onLocalSign = (s) => net.current?.sign(s);
+    e.onLocalSign = (s) => {
+      net.current?.sign(s);
+      saveHolder();
+    };
     e.onPose = (p) => net.current?.move({ ...p, name });
     e.timeSource = () => net.current?.time() ?? null;
+
+    // Load permanent builds from Holder first, then join live multiplayer.
+    let cancelled = false;
+    (async () => {
+      const world = await fetchWorld(room);
+      if (cancelled || !world) return;
+      const flat = world.edits || [];
+      for (let i = 0; i + 3 < flat.length; i += 4) {
+        e.applyRemoteBlock(flat[i]!, flat[i + 1]!, flat[i + 2]!, flat[i + 3]!);
+      }
+      for (const s of world.signs || []) {
+        if (s.length >= 4) {
+          e.applyRemoteSign({
+            x: s[0]!, y: s[1]!, z: s[2]!, yaw: s[3]!, text: String(s[4] ?? ""),
+          });
+        }
+      }
+      // Upload anything only we had locally so Holder stays complete.
+      const local = e.world.dumpEdits();
+      if (local.length) saveHolder();
+    })();
 
     let link: PhotonLink | null = null;
     try {
@@ -51,7 +86,6 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
         onCount: setOnline,
         onPos: (actor, pos) => {
           e.setRemote(actor, pos);
-          // They are back online, so their ghost goes away.
           if (known[pos.name]) link?.setGhost(pos.name, null);
         },
         onLeave: (actor) => {
@@ -65,7 +99,6 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           const mine = g[name];
           if (mine && !placed) {
             placed = true;
-            // Rejoining without a local save: stand where we were last seen instead of the default spawn.
             if (!saved) e.teleport(mine);
             link?.setGhost(name, null);
           }
@@ -76,7 +109,6 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           for (const ed of edits) e.applyRemoteBlock(ed.x, ed.y, ed.z, ed.id);
         },
       });
-      // Share anything we already built in this room (local save) with the network.
       try {
         const flat = e.world.dumpEdits();
         if (flat.length) link?.pushWorld(flat);
@@ -88,6 +120,10 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     }
     net.current = link;
     return () => {
+      cancelled = true;
+      saveHolder();
+      holder.flushNow();
+      holder.close();
       net.current = null;
       link?.close();
       e.dispose();
