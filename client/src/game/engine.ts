@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN } from "./blocks";
 import { spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, type Mob } from "./mobs";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
@@ -9,7 +9,7 @@ import { buildPlayer, animatePlayer, updateTag, setPlayerLight, disposePlayer, l
 import { MiningFx } from "./mining";
 import { buildSign, cleanSignText, disposeSign, retextSign, shadeSign, signKey, type SignData, type SignObject } from "./signs";
 import { DAY_MS, DAY_START } from "./daycycle";
-import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
+import { CS, EYE, HALF_W, HEIGHT, VOID_Y, WH, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
 export interface HudState {
   selected: number;
@@ -117,6 +117,9 @@ export class Engine {
   private mineSfxT = 0;
   private mobs: Mob[] = [];
   private mobTopUpT = 0;
+  /** Time spent standing inside a nether portal (seconds). */
+  private portalT = 0;
+  private portalCooldown = 0;
   private furnaceProgress = 0;
   private furnaceTarget: { x: number; y: number; z: number } | null = null;
   private smeltMsg = "";
@@ -561,6 +564,16 @@ export class Engine {
 
   private updateSky(dt: number) {
     this.elapsed += dt;
+    if (this.world.dim === -1) {
+      // Nether: dark red void, no day cycle lighting swing
+      this.dayFactor = 0.35;
+      this.fogColor.set(0x2a0a0a);
+      (this.scene.background as THREE.Color).set(0x1a0505);
+      this.mats.setSun(0.55);
+      const far = this.rd * CS + 8;
+      this.mats.setFog(this.fogColor, 4, far * 0.7);
+      return;
+    }
     const st = this.sky.update(this.clock % 1, this.camera.position, this.elapsed);
     this.dayFactor = st.day;
     this.fogColor.copy(st.color);
@@ -845,11 +858,74 @@ export class Engine {
     const key = `${Math.floor(this.pos.x / CS)},${Math.floor(this.pos.z / CS)}`;
     if (key !== this.lastChunk) { this.lastChunk = key; this.syncChunks(); }
 
-    // Passive mobs
-    this.updateMobs(dt);
+    // Passive mobs (overworld only — nether is hostile terrain for now)
+    if (this.world.dim === 0) this.updateMobs(dt);
     this.smeltMsgT = Math.max(0, this.smeltMsgT - dt);
+    this.updatePortal(dt);
 
     this.interact(dt);
+  }
+
+  /** Stand in a Nether Portal block to travel between overworld and nether. */
+  private updatePortal(dt: number) {
+    this.portalCooldown = Math.max(0, this.portalCooldown - dt);
+    const bx = Math.floor(this.pos.x);
+    const by = Math.floor(this.pos.y + 0.2);
+    const bz = Math.floor(this.pos.z);
+    const inPortal =
+      this.world.get(bx, by, bz) === NETHER_PORTAL ||
+      this.world.get(bx, by + 1, bz) === NETHER_PORTAL;
+
+    if (inPortal && this.portalCooldown <= 0) {
+      this.portalT += dt;
+      this.smeltMsg = this.world.dim === 0
+        ? `Entering Nether… ${Math.min(100, Math.floor((this.portalT / 1.6) * 100))}%`
+        : `Returning… ${Math.min(100, Math.floor((this.portalT / 1.6) * 100))}%`;
+      this.smeltMsgT = 0.3;
+      if (this.portalT >= 1.6) {
+        this.portalT = 0;
+        this.portalCooldown = 3;
+        this.travelDimension(this.world.dim === 0 ? -1 : 0);
+      }
+    } else if (!inPortal) {
+      this.portalT = 0;
+    }
+  }
+
+  private travelDimension(dim: number) {
+    // Drop chunk meshes
+    for (const k of [...this.meshes.keys()]) this.dropMesh(k);
+    // Clear mobs when leaving overworld
+    for (const m of this.mobs) {
+      this.scene.remove(m.group);
+      disposeMob(m);
+    }
+    this.mobs = [];
+
+    this.world.setDim(dim);
+    // Safe footing near current XZ
+    const x = this.pos.x;
+    const z = this.pos.z;
+    this.world.stream(x, z, this.rd + 1);
+    let y = 32;
+    for (let yy = WH - 4; yy > 2; yy--) {
+      if (this.world.solid(Math.floor(x), yy - 1, Math.floor(z)) && !this.world.solid(Math.floor(x), yy, Math.floor(z))) {
+        y = yy + 0.05;
+        break;
+      }
+    }
+    this.pos.x = x;
+    this.pos.y = y;
+    this.pos.z = z;
+    this.vel.x = this.vel.y = this.vel.z = 0;
+    this.syncChunks(true);
+    if (dim === 0) {
+      this.mobs = spawnHerd(this.world, this.pos, 2);
+      for (const m of this.mobs) this.scene.add(m.group);
+    }
+    this.smeltMsg = dim === -1 ? "The Nether" : "Overworld";
+    this.smeltMsgT = 2.5;
+    sfx.block(OBSIDIAN, "place");
   }
 
   private updateMobs(dt: number) {

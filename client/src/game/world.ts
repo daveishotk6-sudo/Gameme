@@ -1,6 +1,7 @@
 import {
   AIR, BASALT, CACTUS, COAL_ORE, DIRT, FLOWER_RED, FLOWER_YELLOW, GOLD_ORE, GRASS, IRON_ORE, LEAVES, LOG,
   PINE_LEAVES, SAND, SNOW, STONE, TALL_GRASS, WATER, LANTERN, block,
+  NETHERRACK, SOUL_SAND, GLOWSTONE, MAGMA, BLACKSTONE, GRAVEL, NETHER_BRICK, QUARTZ_BLOCK,
 } from "./blocks";
 import { fbm2, hash2, hash3, vnoise3 } from "./noise";
 
@@ -198,12 +199,65 @@ function computeTops(chunk: Chunk) {
   return tops;
 }
 
+
+/** Nether terrain: netherrack shell, caves, magma lakes, glowstone. */
+function fillNetherChunk(cx: number, cz: number, seed: number): Chunk {
+  const c = new Uint8Array(CS * WH * CS);
+  const nseed = seed ^ 0x4e374845; // "NETH"
+  for (let lz = 0; lz < CS; lz++) {
+    for (let lx = 0; lx < CS; lx++) {
+      const wx = cx * CS + lx;
+      const wz = cz * CS + lz;
+      for (let y = 0; y < WH; y++) {
+        let id = AIR;
+        if (y === 0 || y === WH - 1) {
+          id = BASALT;
+        } else if (y === 1 || y === WH - 2) {
+          id = NETHERRACK;
+        } else {
+          // Solid netherrack with 3D caves
+          const dens = vnoise3(wx * 0.04, y * 0.05, wz * 0.04, nseed);
+          const dens2 = vnoise3(wx * 0.02 + 20, y * 0.03, wz * 0.02, nseed + 3);
+          const solid = dens > 0.42 || (y < 8 && dens2 > 0.35) || (y > WH - 10 && dens2 > 0.38);
+          if (solid) {
+            id = NETHERRACK;
+            // Magma near floor
+            if (y < 10 && vnoise3(wx * 0.08, y * 0.1, wz * 0.08, nseed + 9) > 0.78) id = MAGMA;
+            // Soul sand patches on floor-ish surfaces
+            if (y < 14 && y > 3 && dens < 0.5 && hash2(wx, wz + y * 3, nseed + 11) < 0.04) id = SOUL_SAND;
+            // Blackstone veins
+            if (vnoise3(wx * 0.12, y * 0.12, wz * 0.12, nseed + 13) > 0.88) id = BLACKSTONE;
+            // Quartz ore-ish
+            if (y > 20 && y < 50 && vnoise3(wx * 0.2, y * 0.2, wz * 0.2, nseed + 15) > 0.9) id = QUARTZ_BLOCK;
+          } else {
+            // Lava ocean low down
+            if (y < 6) id = MAGMA;
+          }
+        }
+        c[cidx(lx, y, lz)] = id;
+      }
+      // Glowstone hanging from ceiling pockets
+      for (let y = WH - 12; y < WH - 3; y++) {
+        if (c[cidx(lx, y, lz)] === AIR && c[cidx(lx, y + 1, lz)] === NETHERRACK &&
+            hash2(wx, wz + y * 17, nseed + 21) < 0.03) {
+          c[cidx(lx, y, lz)] = GLOWSTONE;
+        }
+      }
+    }
+  }
+  return c;
+}
+
 export class World {
   chunks = new Map<number, Chunk>();
   tops = new Map<number, Uint8Array>();
   edits = new Map<number, Map<number, number>>();
+  /** Edits stored per dimension so overworld & nether don't collide. */
+  private dimEdits = new Map<number, Map<number, Map<number, number>>>();
   lights = new Map<string, [number, number, number]>();
   seed: number;
+  /** 0 = overworld, -1 = nether */
+  dim = 0;
 
   constructor(seed: number) {
     this.seed = seed;
@@ -213,13 +267,39 @@ export class World {
     const k = ck(cx, cz);
     let c = this.chunks.get(k);
     if (!c) {
-      c = fillChunk(cx, cz, this.seed);
+      c = this.dim === -1
+        ? fillNetherChunk(cx, cz, this.seed)
+        : fillChunk(cx, cz, this.seed);
       const e = this.edits.get(k);
       if (e) for (const [i, id] of e) c[i] = id;
       this.chunks.set(k, c);
       this.tops.set(k, computeTops(c));
     }
     return c;
+  }
+
+  /** Switch dimension: park current edits, clear streamed chunks, load other dim. */
+  setDim(dim: number) {
+    if (dim === this.dim) return;
+    this.dimEdits.set(this.dim, this.edits);
+    this.dim = dim;
+    this.edits = this.dimEdits.get(dim) ?? new Map();
+    this.chunks.clear();
+    this.tops.clear();
+    this.lights.clear();
+    // Rebuild light index from edits
+    const LAYER = CS * CS;
+    for (const [k, e] of this.edits) {
+      const cx = ckX(k), cz = ckZ(k);
+      for (const [i, id] of e) {
+        if (block(id).light) {
+          const lx = i % CS;
+          const lz = Math.floor(i / CS) % CS;
+          const ly = Math.floor(i / LAYER);
+          this.lights.set(`${cx * CS + lx},${ly},${cz * CS + lz}`, [cx * CS + lx, ly, cz * CS + lz]);
+        }
+      }
+    }
   }
 
   get(wx: number, wy: number, wz: number) {
@@ -258,7 +338,7 @@ export class World {
 
   private trackLight(wx: number, wy: number, wz: number, id: number) {
     const key = `${wx},${wy},${wz}`;
-    if (id === LANTERN) this.lights.set(key, [wx, wy, wz]);
+    if (block(id).light) this.lights.set(key, [wx, wy, wz]);
     else this.lights.delete(key);
   }
 

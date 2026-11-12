@@ -110,6 +110,48 @@ const painters: Record<number, (x: number, y: number) => RGBA> = {
     if (x <= 1 || x >= 14) return shade("#4a4a50", 0.12, x, y, 85);
     return shade(nse(x, y, 86) > 0.7 ? "#6e6e76" : "#5c5c64", 0.12, x, y, 87);
   },
+  [T.OBSIDIAN]: (x, y) => shade(nse(x, y, 90) > 0.6 ? "#2a1045" : "#12081c", 0.12, x, y, 91),
+  [T.NETHERRACK]: (x, y) => shade(nse(x, y, 92) > 0.55 ? "#8a3a3a" : "#5a2020", 0.18, x, y, 93),
+  [T.SOUL_SAND]: (x, y) => {
+    if (nse(x, y, 94) > 0.82) return shade("#2a2218", 0.1, x, y, 95);
+    return shade(nse(x, y, 96) > 0.5 ? "#5a4a38" : "#3e3228", 0.14, x, y, 97);
+  },
+  [T.GLOWSTONE]: (x, y) => {
+    const g = nse(x, y, 98);
+    if (g > 0.75) return shade("#fff3a0", 0.1, x, y, 99);
+    return shade(g > 0.4 ? "#f0c84a" : "#c99620", 0.15, x, y, 100);
+  },
+  [T.NETHER_BRICK]: (x, y) => {
+    const brick = (Math.floor(y / 4) + Math.floor(x / 8)) % 2 === 0;
+    return shade(brick ? "#4a2222" : "#2e1414", 0.12, x, y, 101);
+  },
+  [T.MAGMA]: (x, y) => {
+    const g = nse(x * 0.7, y * 0.7, 102);
+    if (g > 0.7) return shade("#ff6a20", 0.2, x, y, 103);
+    if (g > 0.4) return shade("#c03010", 0.15, x, y, 104);
+    return shade("#3a1008", 0.1, x, y, 105);
+  },
+  [T.NETHER_PORTAL]: (x, y) => {
+    const wave = Math.sin((x + y) * 0.8) * 0.5 + 0.5;
+    const a = 120 + Math.floor(wave * 80);
+    return [90 + Math.floor(wave * 40), 40, 200 + Math.floor(wave * 55), a];
+  },
+  [T.BLACKSTONE]: (x, y) => shade(nse(x, y, 106) > 0.6 ? "#3a3a42" : "#1e1e24", 0.12, x, y, 107),
+  [T.QUARTZ]: (x, y) => shade(nse(x, y, 108) > 0.7 ? "#f5f2ea" : "#ddd6cc", 0.08, x, y, 109),
+  [T.GRAVEL]: (x, y) => shade(nse(x, y, 110) > 0.5 ? "#9a9590" : "#6e6964", 0.16, x, y, 111),
+  [T.CLAY]: (x, y) => shade(nse(x, y, 112) > 0.55 ? "#b0bac4" : "#8a949e", 0.1, x, y, 113),
+  [T.ICE]: (x, y) => {
+    const c = shade("#9ecfe8", 0.12, x, y, 114);
+    return [c[0], c[1], c[2], 180];
+  },
+  [T.PUMPKIN_SIDE]: (x, y) => {
+    if (x >= 6 && x <= 9 && y >= 5 && y <= 10) return shade("#2a1a08", 0.1, x, y, 115);
+    return shade(nse(x, y, 116) > 0.6 ? "#f0a040" : "#c87820", 0.14, x, y, 117);
+  },
+  [T.PUMPKIN_TOP]: (x, y) => {
+    if (x >= 6 && x <= 9 && y >= 6 && y <= 9) return shade("#3a6a20", 0.1, x, y, 118);
+    return shade("#e09030", 0.12, x, y, 119);
+  },
 };
 
 function ore(base: number, hex: string, salt: number) {

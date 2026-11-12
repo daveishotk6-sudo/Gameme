@@ -25,7 +25,20 @@ export const GOLD_BLOCK = 23;
 export const PINE_LEAVES = 24;
 export const SIGN = 25;
 export const FURNACE = 26;
-export const LAST_BLOCK = 26;
+export const OBSIDIAN = 27;
+export const NETHERRACK = 28;
+export const SOUL_SAND = 29;
+export const GLOWSTONE = 30;
+export const NETHER_BRICK = 31;
+export const MAGMA = 32;
+export const NETHER_PORTAL = 33;
+export const BLACKSTONE = 34;
+export const QUARTZ_BLOCK = 35;
+export const GRAVEL = 36;
+export const CLAY = 37;
+export const ICE = 38;
+export const PUMPKIN = 39;
+export const LAST_BLOCK = 39;
 
 // Non-block items
 export const COAL = 100;
@@ -48,13 +61,15 @@ export const SWORD_IRON = 115;
 
 export const TILE = 16;
 export const ATLAS_COLS = 8;
-export const ATLAS_ROWS = 4;
+export const ATLAS_ROWS = 6;
 
 export const T = {
   GRASS_TOP: 0, GRASS_SIDE: 1, DIRT: 2, STONE: 3, LOG_SIDE: 4, LOG_TOP: 5, LEAVES: 6, SAND: 7,
   COBBLE: 8, WATER: 9, PLANKS: 10, GLASS: 11, BRICK: 12, SNOW: 13, SNOW_SIDE: 14, COAL: 15,
   IRON: 16, GOLD: 17, BASALT: 18, LANTERN: 19, WOOL: 20, CACTUS_SIDE: 21, CACTUS_TOP: 22,
   FLOWER_RED: 23, FLOWER_YELLOW: 24, TALL_GRASS: 25, GOLD_BLOCK: 26, PINE_LEAVES: 27, FURNACE: 28,
+  OBSIDIAN: 29, NETHERRACK: 30, SOUL_SAND: 31, GLOWSTONE: 32, NETHER_BRICK: 33, MAGMA: 34,
+  NETHER_PORTAL: 35, BLACKSTONE: 36, QUARTZ: 37, GRAVEL: 38, CLAY: 39, ICE: 40, PUMPKIN_SIDE: 41, PUMPKIN_TOP: 42,
 } as const;
 
 export interface BlockDef {
@@ -116,6 +131,21 @@ reg(GOLD_BLOCK, "Gold Block", "#f2c744", T.GOLD_BLOCK, { hardness: 3, pick: true
 reg(SIGN, "Sign", "#b88b52", T.PLANKS, { solid: false, opaque: false, invisible: true, hardness: 0.3 });
 reg(PINE_LEAVES, "Pine Needles", "#27603a", T.PINE_LEAVES, { hardness: 0.25, drop: null });
 reg(FURNACE, "Furnace", "#6a6a70", T.FURNACE, { hardness: 3.0, pick: true });
+reg(OBSIDIAN, "Obsidian", "#1a0a2e", T.OBSIDIAN, { hardness: 12, pick: true });
+reg(NETHERRACK, "Netherrack", "#6b2b2b", T.NETHERRACK, { hardness: 0.5 });
+reg(SOUL_SAND, "Soul Sand", "#4a3a2a", T.SOUL_SAND, { hardness: 0.6 });
+reg(GLOWSTONE, "Glowstone", "#f5d76e", T.GLOWSTONE, { hardness: 0.4, light: true });
+reg(NETHER_BRICK, "Nether Brick", "#3a1a1a", T.NETHER_BRICK, { hardness: 2.8, pick: true });
+reg(MAGMA, "Magma", "#c44a12", T.MAGMA, { hardness: 1.2, pick: true, light: true });
+reg(NETHER_PORTAL, "Nether Portal", "#7b2cff", T.NETHER_PORTAL, {
+  solid: false, opaque: false, transparent: true, hardness: Infinity, drop: null,
+});
+reg(BLACKSTONE, "Blackstone", "#2a2a30", T.BLACKSTONE, { hardness: 2.4, pick: true });
+reg(QUARTZ_BLOCK, "Quartz", "#e8e4dc", T.QUARTZ, { hardness: 1.4, pick: true });
+reg(GRAVEL, "Gravel", "#8a8580", T.GRAVEL, { hardness: 0.6 });
+reg(CLAY, "Clay", "#9aa4b0", T.CLAY, { hardness: 0.6 });
+reg(ICE, "Ice", "#a8d8f0", T.ICE, { opaque: false, transparent: true, hardness: 0.5 });
+reg(PUMPKIN, "Pumpkin", "#e09030", [T.PUMPKIN_TOP, T.PUMPKIN_TOP, T.PUMPKIN_SIDE], { hardness: 0.9 });
 
 export const BLOCKS = DEFS;
 export function block(id: number): BlockDef {
@@ -199,4 +229,6 @@ export const RECIPES: Recipe[] = [
   { out: [GOLD_BLOCK, 1], inp: [[GOLD, 4]] },
   { out: [WOOL, 1], inp: [[TALL_GRASS, 4]] },
   { out: [FURNACE, 1], inp: [[COBBLE, 8]] },
+  { out: [NETHER_BRICK, 4], inp: [[NETHERRACK, 4]] },
+  { out: [OBSIDIAN, 1], inp: [[WATER, 1], [MAGMA, 1]] },
 ];
