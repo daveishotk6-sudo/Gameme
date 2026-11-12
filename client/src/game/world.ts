@@ -200,51 +200,118 @@ function computeTops(chunk: Chunk) {
 }
 
 
-/** Nether terrain: netherrack shell, caves, magma lakes, glowstone. */
+/**
+ * Nether inspired by classic Nether Wastes + basalt deltas:
+ * open cavern, lava sea, netherrack shelves, glowstone ceiling blobs, basalt columns.
+ */
 function fillNetherChunk(cx: number, cz: number, seed: number): Chunk {
   const c = new Uint8Array(CS * WH * CS);
   const nseed = seed ^ 0x4e374845; // "NETH"
+  const LAVA_Y = 9;
+
   for (let lz = 0; lz < CS; lz++) {
     for (let lx = 0; lx < CS; lx++) {
       const wx = cx * CS + lx;
       const wz = cz * CS + lz;
+
+      // Floor / ceiling height fields (shelves and overhangs)
+      const floorN = fbm2(wx * 0.03, wz * 0.03, nseed, 3);
+      const ceilN = fbm2(wx * 0.028 + 40, wz * 0.028 - 17, nseed + 7, 3);
+      const floorY = Math.floor(LAVA_Y + 2 + floorN * 14); // ~11–25
+      const ceilY = Math.floor(WH - 4 - ceilN * 12); // ~48–60
+      // Occasional deep lava pits
+      const pit = fbm2(wx * 0.05 + 90, wz * 0.05, nseed + 19, 2) > 0.72;
+      const localFloor = pit ? LAVA_Y - 1 : floorY;
+
       for (let y = 0; y < WH; y++) {
         let id = AIR;
-        if (y === 0 || y === WH - 1) {
+        if (y === 0) {
           id = BASALT;
-        } else if (y === 1 || y === WH - 2) {
+        } else if (y === WH - 1) {
+          id = BASALT;
+        } else if (y === WH - 2) {
           id = NETHERRACK;
+        } else if (y <= LAVA_Y) {
+          // Lava sea (magma stands in for lava)
+          id = MAGMA;
+          if (y === LAVA_Y && !pit && hash2(wx, wz, nseed + 31) < 0.08) id = NETHERRACK; // stepping stones
+        } else if (y <= localFloor) {
+          id = NETHERRACK;
+          // Magma crust near lava
+          if (y <= LAVA_Y + 2 && hash2(wx + y, wz, nseed + 33) < 0.18) id = MAGMA;
+          // Soul sand flats
+          if (y === localFloor && fbm2(wx * 0.06, wz * 0.06, nseed + 41, 2) > 0.62 &&
+              hash2(wx, wz, nseed + 42) < 0.22) id = SOUL_SAND;
+          // Blackstone veins
+          if (vnoise3(wx * 0.14, y * 0.14, wz * 0.14, nseed + 45) > 0.87) id = BLACKSTONE;
+          // Quartz pockets
+          if (y > 16 && vnoise3(wx * 0.22, y * 0.22, wz * 0.22, nseed + 47) > 0.9) id = QUARTZ_BLOCK;
+        } else if (y >= ceilY) {
+          id = NETHERRACK;
+          if (vnoise3(wx * 0.12, y * 0.12, wz * 0.12, nseed + 49) > 0.86) id = BLACKSTONE;
         } else {
-          // Solid netherrack with 3D caves
-          const dens = vnoise3(wx * 0.04, y * 0.05, wz * 0.04, nseed);
-          const dens2 = vnoise3(wx * 0.02 + 20, y * 0.03, wz * 0.02, nseed + 3);
-          const solid = dens > 0.42 || (y < 8 && dens2 > 0.35) || (y > WH - 10 && dens2 > 0.38);
-          if (solid) {
+          // Open cavern air — thin floating shelves
+          const shelf = vnoise3(wx * 0.05, y * 0.08, wz * 0.05, nseed + 55);
+          if (shelf > 0.78 && y > localFloor + 6 && y < ceilY - 6) {
             id = NETHERRACK;
-            // Magma near floor
-            if (y < 10 && vnoise3(wx * 0.08, y * 0.1, wz * 0.08, nseed + 9) > 0.78) id = MAGMA;
-            // Soul sand patches on floor-ish surfaces
-            if (y < 14 && y > 3 && dens < 0.5 && hash2(wx, wz + y * 3, nseed + 11) < 0.04) id = SOUL_SAND;
-            // Blackstone veins
-            if (vnoise3(wx * 0.12, y * 0.12, wz * 0.12, nseed + 13) > 0.88) id = BLACKSTONE;
-            // Quartz ore-ish
-            if (y > 20 && y < 50 && vnoise3(wx * 0.2, y * 0.2, wz * 0.2, nseed + 15) > 0.9) id = QUARTZ_BLOCK;
-          } else {
-            // Lava ocean low down
-            if (y < 6) id = MAGMA;
+            if (hash2(wx, y * 3 + wz, nseed + 56) < 0.12) id = MAGMA;
           }
         }
         c[cidx(lx, y, lz)] = id;
       }
-      // Glowstone hanging from ceiling pockets
-      for (let y = WH - 12; y < WH - 3; y++) {
-        if (c[cidx(lx, y, lz)] === AIR && c[cidx(lx, y + 1, lz)] === NETHERRACK &&
-            hash2(wx, wz + y * 17, nseed + 21) < 0.03) {
-          c[cidx(lx, y, lz)] = GLOWSTONE;
+    }
+  }
+
+  // Basalt / blackstone columns rising from the floor (basalt-deltas feel)
+  for (let gz = 0; gz < CS; gz++) {
+    for (let gx = 0; gx < CS; gx++) {
+      const wx = cx * CS + gx;
+      const wz = cz * CS + gz;
+      if (hash2(wx, wz, nseed + 60) > 0.035) continue;
+      // Find surface above lava
+      let base = LAVA_Y + 1;
+      for (let y = LAVA_Y + 1; y < 40; y++) {
+        if (c[cidx(gx, y, gz)] !== AIR && c[cidx(gx, y, gz)] !== MAGMA) base = y + 1;
+      }
+      const h = 4 + Math.floor(hash2(wx, wz, nseed + 61) * 14);
+      const col = hash2(wx, wz, nseed + 62) < 0.45 ? BASALT : BLACKSTONE;
+      for (let dy = 0; dy < h; dy++) {
+        const yy = base + dy;
+        if (yy >= WH - 2) break;
+        if (c[cidx(gx, yy, gz)] === AIR || c[cidx(gx, yy, gz)] === MAGMA) {
+          c[cidx(gx, yy, gz)] = col;
         }
       }
     }
   }
+
+  // Glowstone blobs — coral-like clusters hanging from the ceiling
+  for (let tryN = 0; tryN < 14; tryN++) {
+    const lx = Math.floor(hash2(cx * 3 + tryN, cz * 5 + tryN, nseed + 70) * CS);
+    const lz = Math.floor(hash2(cx * 7 + tryN, cz * 11 + tryN, nseed + 71) * CS);
+    // Search down from ceiling for air under solid
+    let attach = -1;
+    for (let y = WH - 3; y > 20; y--) {
+      if (c[cidx(lx, y, lz)] !== AIR && c[cidx(lx, y - 1, lz)] === AIR) {
+        attach = y - 1;
+        break;
+      }
+    }
+    if (attach < 0) continue;
+    const size = 2 + Math.floor(hash2(lx, lz + tryN, nseed + 72) * 4);
+    for (let dy = 0; dy < size; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          if (Math.abs(dx) + Math.abs(dz) + dy > size) continue;
+          if (hash2(lx + dx * 3, lz + dz * 5 + dy, nseed + 73 + tryN) < 0.35) continue;
+          const x = lx + dx, z = lz + dz, y = attach - dy;
+          if (x < 0 || z < 0 || x >= CS || z >= CS || y < 1) continue;
+          if (c[cidx(x, y, z)] === AIR) c[cidx(x, y, z)] = GLOWSTONE;
+        }
+      }
+    }
+  }
+
   return c;
 }
 

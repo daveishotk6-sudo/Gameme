@@ -565,13 +565,13 @@ export class Engine {
   private updateSky(dt: number) {
     this.elapsed += dt;
     if (this.world.dim === -1) {
-      // Nether: dark red void, no day cycle lighting swing
-      this.dayFactor = 0.35;
-      this.fogColor.set(0x2a0a0a);
-      (this.scene.background as THREE.Color).set(0x1a0505);
-      this.mats.setSun(0.55);
+      // Classic Nether Wastes atmosphere: deep red fog, warm ambient light
+      this.dayFactor = 0.4;
+      this.fogColor.set(0x330808);
+      (this.scene.background as THREE.Color).set(0x1c0606);
+      this.mats.setSun(0.72); // brighter so glowstone + magma read well
       const far = this.rd * CS + 8;
-      this.mats.setFog(this.fogColor, 4, far * 0.7);
+      this.mats.setFog(this.fogColor, 6, Math.max(18, far * 0.55));
       return;
     }
     const st = this.sky.update(this.clock % 1, this.camera.position, this.elapsed);
