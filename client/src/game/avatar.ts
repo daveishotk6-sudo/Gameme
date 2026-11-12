@@ -354,6 +354,8 @@ export interface Motion {
   vy: number;
   /** Where they're looking, in radians (positive is up). */
   pitch: number;
+  /** True while they are mining or hitting something, so their arm swings. */
+  swing?: boolean;
 }
 
 /** Walk cycle, idle breathing, arms out in the air, and the head follows where they look. */
@@ -372,6 +374,16 @@ export function animatePlayer(g: THREE.Group, dt: number, t: number, m: Motion) 
   const out = 0.05 + 0.03 * breathe + air * 0.7;
   p.armR.rotation.z = out;
   p.armL.rotation.z = -out;
+
+  // Mining: the right arm raises and chops down; blends in and out smoothly.
+  const u = g.userData as { mineP?: number; mineW?: number };
+  u.mineW = (u.mineW ?? 0) + ((m.swing ? 1 : 0) - (u.mineW ?? 0)) * Math.min(1, dt * 14);
+  u.mineP = m.swing ? (u.mineP ?? 0) + dt * 2.7 : 0;
+  if (u.mineW > 0.01) {
+    const chop = 0.5 + 0.5 * Math.sin(u.mineP * Math.PI * 2);
+    p.armR.rotation.x += (1.0 + chop * 1.2 - p.armR.rotation.x) * u.mineW;
+    p.armR.rotation.z += (0.05 - p.armR.rotation.z) * u.mineW;
+  }
 
   p.head.rotation.x = THREE.MathUtils.clamp(m.pitch, -1.1, 1.1) * 0.85;
   p.head.rotation.y = Math.sin(t * 0.7 + p.seed) * 0.1 * (1 - moving);

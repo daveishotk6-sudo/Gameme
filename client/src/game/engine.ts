@@ -4,7 +4,8 @@ import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
 import { sfx, materialOf } from "./audio";
-import { buildPlayer, animatePlayer, updateTag, setPlayerLight, disposePlayer } from "./avatar";
+import { buildPlayer, animatePlayer, updateTag, setPlayerLight, disposePlayer, lookOf } from "./avatar";
+import { MiningFx } from "./mining";
 import { DAY_MS, DAY_START } from "./daycycle";
 import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
@@ -39,6 +40,7 @@ interface Remote {
   tx: number; ty: number; tz: number; tyaw: number; tpitch: number;
   /** Smoothed values the walk animation is driven from. */
   pitch: number; speed: number; vy: number;
+  mine: boolean;
   name: string;
 }
 
@@ -78,7 +80,7 @@ export class Engine {
   clock = DAY_START;
 
   onLocalBlock?: (x: number, y: number, z: number, id: number) => void;
-  onPose?: (p: { x: number; y: number; z: number; yaw: number; pitch: number }) => void;
+  onPose?: (p: { x: number; y: number; z: number; yaw: number; pitch: number; mine: boolean }) => void;
   /** Shared multiplayer time of day (0..1), or null when not synced (offline / still connecting). */
   timeSource?: () => number | null;
   private remotes = new Map<number, Remote>();
@@ -110,6 +112,10 @@ export class Engine {
   private flyLift = 0;
   private stepDist = 0;
   private mineSfxT = 0;
+  private fx!: MiningFx;
+  private fxProgress = 0;
+  private fxMining = false;
+  private hSpeed = 0;
   private wasInWater = false;
   private t0 = performance.now();
   private spawn: { x: number; y: number; z: number };
@@ -144,6 +150,7 @@ export class Engine {
     this.scene.add(this.outline);
 
     this.sky = new Sky(this.scene);
+    this.fx = new MiningFx(this.scene, this.camera, lookOf(this.o.name));
     this.applyFog();
     this.world.stream(this.pos.x, this.pos.z, this.rd + 1);
     // Don't spawn inside terrain after loading a save.
@@ -168,7 +175,7 @@ export class Engine {
     this.markEdit(x, z);
   }
 
-  setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string; pitch?: number }) {
+  setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string; pitch?: number; mine?: boolean }) {
     const pitch = Number.isFinite(p.pitch) ? (p.pitch as number) : 0;
     let r = this.remotes.get(actor);
     if (!r) {
@@ -176,10 +183,10 @@ export class Engine {
       g.position.set(p.x, p.y, p.z);
       g.rotation.y = p.yaw;
       this.scene.add(g);
-      r = { group: g, tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, tpitch: pitch, pitch, speed: 0, vy: 0, name: p.name };
+      r = { group: g, tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, tpitch: pitch, pitch, speed: 0, vy: 0, mine: !!p.mine, name: p.name };
       this.remotes.set(actor, r);
     }
-    r.tx = p.x; r.ty = p.y; r.tz = p.z; r.tyaw = p.yaw; r.tpitch = pitch;
+    r.tx = p.x; r.ty = p.y; r.tz = p.z; r.tyaw = p.yaw; r.tpitch = pitch; r.mine = !!p.mine;
   }
 
   remoteInfo(actor: number) {
@@ -330,6 +337,7 @@ export class Engine {
     this.saveNow();
     for (const c of this.cleanup) c();
     for (const k of [...this.meshes.keys()]) this.dropMesh(k);
+    this.fx.dispose();
     for (const a of [...this.remotes.keys()]) this.removeRemote(a);
     for (const g of this.ghosts.values()) { this.scene.remove(g); disposePlayer(g); }
     this.ghosts.clear();
@@ -544,6 +552,14 @@ export class Engine {
 
     this.camera.position.set(this.pos.x, this.pos.y + EYE, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.fx.setHeld(this.hotbar[this.selected] ?? 0);
+    this.fx.update(dt, {
+      mining: this.fxMining,
+      progress: this.fxProgress,
+      target: this.hit ? { x: this.hit.x, y: this.hit.y, z: this.hit.z } : null,
+      speed: this.hSpeed,
+      visible: !this.paused && !this.dead,
+    });
     this.updateSky(dt);
     const k2 = Math.min(1, dt * 10);
     // Other players: glide to their latest position, walk/idle animation, look direction, light and nametag.
@@ -566,7 +582,7 @@ export class Engine {
         r.speed += (sp - r.speed) * ks;
         r.vy += (vy - r.vy) * ks;
       }
-      animatePlayer(g, dt, this.elapsed, { speed: r.speed, vy: r.vy, pitch: r.pitch });
+      animatePlayer(g, dt, this.elapsed, { speed: r.speed, vy: r.vy, pitch: r.pitch, swing: r.mine });
       setPlayerLight(g, light);
       updateTag(g, cam);
     }
@@ -579,7 +595,7 @@ export class Engine {
     this.poseT += dt;
     if (this.poseT > 0.12) {
       this.poseT = 0;
-      this.onPose?.({ x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, pitch: this.pitch });
+      this.onPose?.({ x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, pitch: this.pitch, mine: this.fxMining });
     }
     this.renderer.render(this.scene, this.camera);
 
@@ -639,6 +655,7 @@ export class Engine {
       this.vel.y = Math.max(-45, this.vel.y);
     }
     this.grounded = moveBody(w, this.pos, this.vel, dt);
+    this.hSpeed = this.grounded ? Math.hypot(this.vel.x, this.vel.z) : 0;
     if (this.grounded && jump && !this.flying) { this.vel.y = 8.6; this.grounded = false; sfx.jump(); }
     if (this.grounded && this.flying && this.flyGrace <= 0) this.setFly(false);
 
@@ -732,6 +749,8 @@ export class Engine {
     this.mineCd -= dt;
     this.placeCd -= dt;
 
+    this.fxMining = false;
+    this.fxProgress = 0;
     if (this.mineHeld && hit) {
       const id = w.get(hit.x, hit.y, hit.z);
       const def = block(id);
@@ -740,7 +759,13 @@ export class Engine {
       if (def.hardness !== Infinity) {
         this.mineProgress += dt;
         this.mineSfxT -= dt;
-        if (this.mineSfxT <= 0) { this.mineSfxT = 0.2; sfx.block(id, "hit"); }
+        this.fxMining = true;
+        this.fxProgress = Math.min(1, this.mineProgress / Math.min(def.hardness, 0.35));
+        if (this.mineSfxT <= 0) {
+          this.mineSfxT = 0.2;
+          sfx.block(id, "hit");
+          this.fx.burst(hit.x + hit.faceX * 0.45, hit.y + hit.faceY * 0.45, hit.z + hit.faceZ * 0.45, id, 2, 1.6);
+        }
         if (this.mineProgress >= Math.min(def.hardness, 0.35) && this.mineCd <= 0) {
           this.breakBlock(hit.x, hit.y, hit.z);
           this.mineProgress = 0;
@@ -766,6 +791,7 @@ export class Engine {
           w.set(px, py, pz, id);
           this.markEdit(px, pz);
           sfx.block(id, "place");
+          this.fx.swingOnce();
           this.onLocalBlock?.(px, py, pz, id);
           this.placeCd = 0.22;
         }
@@ -775,7 +801,9 @@ export class Engine {
 
   private breakBlock(x: number, y: number, z: number) {
     const w = this.world;
-    sfx.block(w.get(x, y, z), "break");
+    const oldId = w.get(x, y, z);
+    sfx.block(oldId, "break");
+    this.fx.burst(x, y, z, oldId, 16, 3);
     w.set(x, y, z, AIR);
     this.markEdit(x, z);
     this.onLocalBlock?.(x, y, z, AIR);

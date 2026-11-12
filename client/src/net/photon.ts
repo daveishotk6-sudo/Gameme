@@ -10,7 +10,7 @@ const EV_BLOCK = 2;
 export type Ghost = { x: number; y: number; z: number; yaw: number; t: number };
 export type Ghosts = Record<string, Ghost>;
 /** `pitch` (where they are looking) is optional so older clients that don't send it still work. */
-export type RemotePos = { x: number; y: number; z: number; yaw: number; name: string; pitch?: number };
+export type RemotePos = { x: number; y: number; z: number; yaw: number; name: string; pitch?: number; mine?: boolean };
 
 type Handlers = {
   onStatus: (text: string) => void;
