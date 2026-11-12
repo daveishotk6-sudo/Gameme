@@ -16,9 +16,16 @@ const types = {
 };
 
 const server = http.createServer((req, res) => {
-  const raw = decodeURIComponent((req.url || "/").split("?")[0]);
+  let raw;
+  try {
+    raw = decodeURIComponent((req.url || "/").split("?")[0]);
+  } catch {
+    res.writeHead(400);
+    res.end("Bad request");
+    return;
+  }
   let file = path.normalize(path.join(dist, raw));
-  if (!file.startsWith(dist)) {
+  if (file !== dist && !file.startsWith(dist + path.sep)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;

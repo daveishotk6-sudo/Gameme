@@ -4,6 +4,7 @@ import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
 import { sfx, materialOf } from "./audio";
+import { buildPlayer, animatePlayer, updateTag, setPlayerLight, disposePlayer } from "./avatar";
 import { DAY_MS, DAY_START } from "./daycycle";
 import { CS, EYE, HALF_W, HEIGHT, VOID_Y, World, ck, ckX, ckZ, findSpawn, moveBody, overlaps, raycast, type Hit } from "./world";
 
@@ -35,59 +36,10 @@ const HOTBAR_DEFAULT = [1, 2, 3, 4, 9, 10, 11, 17, 7];
 
 interface Remote {
   group: THREE.Group;
-  tx: number; ty: number; tz: number; tyaw: number;
+  tx: number; ty: number; tz: number; tyaw: number; tpitch: number;
+  /** Smoothed values the walk animation is driven from. */
+  pitch: number; speed: number; vy: number;
   name: string;
-}
-
-function nameTag(name: string, dim = false) {
-  const c = document.createElement("canvas");
-  c.width = 256; c.height = 48;
-  const g = c.getContext("2d")!;
-  g.font = (dim ? "italic bold 26px" : "bold 28px") + " sans-serif";
-  g.textAlign = "center";
-  g.fillStyle = "rgba(0,0,0,0.55)";
-  const w = Math.min(250, g.measureText(name).width + 22);
-  g.fillRect(128 - w / 2, 4, w, 40);
-  g.fillStyle = dim ? "#b8c4d8" : "#fff";
-  g.fillText(name.slice(0, 22), 128, 35);
-  const t = new THREE.CanvasTexture(c);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
-  sp.scale.set(dim ? 2.2 : 1.6, dim ? 0.38 : 0.3, 1);
-  sp.position.y = 2.1;
-  sp.renderOrder = 20;
-  return sp;
-}
-
-function buildFigure(ghost: boolean, label: string) {
-  const g = new THREE.Group();
-  const add = (w: number, h: number, d: number, c: number, x: number, y: number, z: number) => {
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshBasicMaterial(ghost ? { color: c, transparent: true, opacity: 0.42, depthWrite: false } : { color: c }),
-    );
-    m.position.set(x, y, z);
-    g.add(m);
-  };
-  const body = ghost ? 0x9fb4d6 : 0x3b82f6;
-  const legs = ghost ? 0x7d92b8 : 0x1e40af;
-  const skin = ghost ? 0xc9d6ea : 0xf2c9a0;
-  add(0.5, 0.75, 0.28, body, 0, 1.05, 0);
-  add(0.42, 0.42, 0.42, skin, 0, 1.65, 0);
-  add(0.08, 0.08, 0.02, 0x222222, -0.1, 1.68, -0.22);
-  add(0.08, 0.08, 0.02, 0x222222, 0.1, 1.68, -0.22);
-  add(0.22, 0.68, 0.24, legs, -0.13, 0.34, 0);
-  add(0.22, 0.68, 0.24, legs, 0.13, 0.34, 0);
-  g.add(nameTag(label, ghost));
-  return g;
-}
-
-function disposeGroup(g: THREE.Group) {
-  g.traverse((o) => {
-    const m = o as THREE.Mesh;
-    m.geometry?.dispose();
-    const mat = m.material as THREE.Material | undefined;
-    mat?.dispose();
-  });
 }
 
 export class Engine {
@@ -126,7 +78,7 @@ export class Engine {
   clock = DAY_START;
 
   onLocalBlock?: (x: number, y: number, z: number, id: number) => void;
-  onPose?: (p: { x: number; y: number; z: number; yaw: number }) => void;
+  onPose?: (p: { x: number; y: number; z: number; yaw: number; pitch: number }) => void;
   /** Shared multiplayer time of day (0..1), or null when not synced (offline / still connecting). */
   timeSource?: () => number | null;
   private remotes = new Map<number, Remote>();
@@ -216,16 +168,18 @@ export class Engine {
     this.markEdit(x, z);
   }
 
-  setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string }) {
+  setRemote(actor: number, p: { x: number; y: number; z: number; yaw: number; name: string; pitch?: number }) {
+    const pitch = Number.isFinite(p.pitch) ? (p.pitch as number) : 0;
     let r = this.remotes.get(actor);
     if (!r) {
-      const g = buildFigure(false, p.name);
+      const g = buildPlayer({ name: p.name, label: p.name, ghost: false });
       g.position.set(p.x, p.y, p.z);
+      g.rotation.y = p.yaw;
       this.scene.add(g);
-      r = { group: g, tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, name: p.name };
+      r = { group: g, tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, tpitch: pitch, pitch, speed: 0, vy: 0, name: p.name };
       this.remotes.set(actor, r);
     }
-    r.tx = p.x; r.ty = p.y; r.tz = p.z; r.tyaw = p.yaw;
+    r.tx = p.x; r.ty = p.y; r.tz = p.z; r.tyaw = p.yaw; r.tpitch = pitch;
   }
 
   remoteInfo(actor: number) {
@@ -238,7 +192,7 @@ export class Engine {
     for (const [who, g] of this.ghosts) {
       if (!map[who] || who === this.o.name) {
         this.scene.remove(g);
-        disposeGroup(g);
+        disposePlayer(g);
         this.ghosts.delete(who);
       }
     }
@@ -246,7 +200,7 @@ export class Engine {
       if (who === this.o.name) continue;
       let g = this.ghosts.get(who);
       if (!g) {
-        g = buildFigure(true, `[Offline] ${who}`);
+        g = buildPlayer({ name: who, label: `[Offline] ${who}`, ghost: true });
         this.scene.add(g);
         this.ghosts.set(who, g);
       }
@@ -274,7 +228,7 @@ export class Engine {
     const r = this.remotes.get(actor);
     if (!r) return;
     this.scene.remove(r.group);
-    disposeGroup(r.group);
+    disposePlayer(r.group);
     this.remotes.delete(actor);
   }
 
@@ -377,7 +331,7 @@ export class Engine {
     for (const c of this.cleanup) c();
     for (const k of [...this.meshes.keys()]) this.dropMesh(k);
     for (const a of [...this.remotes.keys()]) this.removeRemote(a);
-    for (const g of this.ghosts.values()) { this.scene.remove(g); disposeGroup(g); }
+    for (const g of this.ghosts.values()) { this.scene.remove(g); disposePlayer(g); }
     this.ghosts.clear();
     this.mats.dispose();
     this.renderer.dispose();
@@ -592,20 +546,40 @@ export class Engine {
     this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.updateSky(dt);
     const k2 = Math.min(1, dt * 10);
+    // Other players: glide to their latest position, walk/idle animation, look direction, light and nametag.
+    const light = 0.3 + 0.7 * this.dayFactor;
+    const cam = this.camera.position;
     for (const r of this.remotes.values()) {
       const g = r.group;
+      const ox = g.position.x, oy = g.position.y, oz = g.position.z;
       g.position.x += (r.tx - g.position.x) * k2;
       g.position.y += (r.ty - g.position.y) * k2;
       g.position.z += (r.tz - g.position.z) * k2;
       let dy = r.tyaw - g.rotation.y;
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       g.rotation.y += dy * k2;
+      r.pitch += (r.tpitch - r.pitch) * k2;
+      if (dt > 0) {
+        const ks = Math.min(1, dt * 8);
+        const sp = Math.min(14, Math.hypot(g.position.x - ox, g.position.z - oz) / dt);
+        const vy = Math.max(-12, Math.min(12, (g.position.y - oy) / dt));
+        r.speed += (sp - r.speed) * ks;
+        r.vy += (vy - r.vy) * ks;
+      }
+      animatePlayer(g, dt, this.elapsed, { speed: r.speed, vy: r.vy, pitch: r.pitch });
+      setPlayerLight(g, light);
+      updateTag(g, cam);
     }
-    for (const g of this.ghosts.values()) g.position.y = (g.userData.baseY as number) + Math.sin(this.elapsed * 1.6) * 0.1;
+    for (const g of this.ghosts.values()) {
+      g.position.y = (g.userData.baseY as number) + Math.sin(this.elapsed * 1.6) * 0.1;
+      animatePlayer(g, dt, this.elapsed, { speed: 0, vy: 0, pitch: 0 });
+      setPlayerLight(g, light);
+      updateTag(g, cam);
+    }
     this.poseT += dt;
     if (this.poseT > 0.12) {
       this.poseT = 0;
-      this.onPose?.({ x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw });
+      this.onPose?.({ x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, pitch: this.pitch });
     }
     this.renderer.render(this.scene, this.camera);
 

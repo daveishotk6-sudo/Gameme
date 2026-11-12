@@ -21,7 +21,7 @@ function Home() {
         <div className="card">
           <p className="kicker">VOXEL SANDBOX</p>
           <h1>GAMEME</h1>
-          <p>Same room code is the same world. Friends show up as blue figures.</p>
+          <p>Same room code is the same world. Friends show up as characters with their name above them.</p>
           <label className="field">
             Your name
             <input value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
@@ -43,7 +43,7 @@ function Home() {
             Play
           </button>
           <ul className="help">
-            <li>iPad: left side moves, right side looks, green Jump</li>
+            <li>iPad: left side moves, right side looks, green Jump, Fly button to fly</li>
             <li>Your room saves on this device.</li>
           </ul>
         </div>
