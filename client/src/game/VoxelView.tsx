@@ -6,11 +6,21 @@ import { iconURL } from "./icons";
 import { SIGN_MAX_BREAKS, SIGN_MAX_CHARS, type SignData } from "./signs";
 import { sfx } from "./audio";
 import { connectPhoton, type Ghosts, type PhotonLink } from "../net/photon";
+import { getPhotonAuth, type Account } from "../net/playfab";
 import { fetchWorld, makeHolderSync } from "../net/holder";
 
-type Props = { seed: number; room: string; name: string; onExit: () => void };
+type Props = {
+  seed: number;
+  room: string;
+  name: string;
+  /** The signed-in PlayFab account; Photon uses it to verify who you are. */
+  account?: Account;
+  /** The login stopped working: go back to the login screen. */
+  onAuthLost?: () => void;
+  onExit: () => void;
+};
 
-export default function VoxelView({ seed, room, name, onExit }: Props) {
+export default function VoxelView({ seed, room, name, account, onAuthLost, onExit }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<Engine | null>(null);
   const net = useRef<PhotonLink | null>(null);
@@ -108,6 +118,9 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
         onWorld: (edits) => {
           for (const ed of edits) e.applyRemoteBlock(ed.x, ed.y, ed.z, ed.id);
         },
+      }, {
+        auth: account ? () => getPhotonAuth(account) : undefined,
+        onAuthLost,
       });
       try {
         const flat = e.world.dumpEdits();
