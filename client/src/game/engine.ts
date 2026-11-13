@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT } from "./blocks";
 import {
   spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, spawnMonsters, isHostile, mobAim,
   createArrow, updateArrow, disposeArrow, type Arrow, type Mob, type MobCtx,
@@ -98,6 +98,8 @@ export class Engine {
   private hurt = 0;
   private hurtCd = 99;
   private regenT = 0;
+  private fps = 60;
+  private fuses: { x: number; y: number; z: number; t: number }[] = [];
   private airT = 0;
   private peakY = 0;
   private airborne = false;
@@ -408,6 +410,45 @@ export class Engine {
     this.emit();
   }
 
+  /** MX6 debug only. Full heal, and clear a death if one is in progress. */
+  mx6Heal() {
+    if (!isMx6(this.o.name)) return;
+    this.health = 20;
+    this.air = 10;
+    this.dead = false;
+    this.emit();
+  }
+
+  /** MX6 debug only. Drop a block of TNT a few steps ahead, already burning. */
+  spawnLitTnt() {
+    if (!isMx6(this.o.name)) return;
+    const sin = Math.sin(this.yaw);
+    const cos = Math.cos(this.yaw);
+    const x = Math.floor(this.pos.x - sin * 4);
+    let y = Math.floor(this.pos.y + 0.2);
+    const z = Math.floor(this.pos.z - cos * 4);
+    for (let i = 0; i < 4 && !isReplaceable(this.world.get(x, y, z)); i++) y++;
+    if (y < 1 || y >= WH - 1 || !isReplaceable(this.world.get(x, y, z))) return;
+    this.world.set(x, y, z, TNT);
+    this.markEdit(x, z);
+    this.onLocalBlock?.(x, y, z, TNT);
+    sfx.block(TNT, "place");
+    this.fuses.push({ x, y, z, t: 2.2 });
+  }
+
+  mx6Debug() {
+    return {
+      fps: Math.round(this.fps),
+      seed: this.world.seed,
+      chunks: this.world.chunks.size,
+      yaw: this.yaw,
+      pitch: this.pitch,
+      fuses: this.fuses.length,
+      flying: this.flying,
+      health: this.health,
+    };
+  }
+
   respawn() {
     this.health = 20;
     this.air = 10;
@@ -681,6 +722,7 @@ export class Engine {
     this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
+    if (dt > 0) this.fps += (1 / dt - this.fps) * 0.08;
     if (!this.paused && !this.modal) this.update(dt);
     this.signT -= dt;
     if (this.signT <= 0) {
@@ -753,6 +795,7 @@ export class Engine {
   };
 
   private update(dt: number) {
+    this.tickFuses(dt);
     const w = this.world;
     if (this.dead) return;
     this.hurtCd += dt;
@@ -1272,6 +1315,51 @@ export class Engine {
     }
   }
 
+  private tickFuses(dt: number) {
+    if (!this.fuses.length) return;
+    const due: { x: number; y: number; z: number }[] = [];
+    const left: { x: number; y: number; z: number; t: number }[] = [];
+    for (const f of this.fuses) {
+      f.t -= dt;
+      if (f.t <= 0) due.push(f);
+      else left.push(f);
+    }
+    this.fuses = left;
+    for (const f of due) this.explode(f.x, f.y, f.z);
+  }
+
+  private explode(cx: number, cy: number, cz: number) {
+    const R = 3;
+    this.fx.burst(cx, cy, cz, TNT, 28, 6);
+    sfx.block(TNT, "break");
+    for (let x = cx - R; x <= cx + R; x++) {
+      for (let y = cy - R; y <= cy + R; y++) {
+        for (let z = cz - R; z <= cz + R; z++) {
+          if ((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2 > R * R + 1) continue;
+          if (y < 1 || y >= WH) continue;
+          const id = this.world.get(x, y, z);
+          if (id === AIR || id === BASALT) continue;
+          if (block(id).hardness === Infinity) continue;
+          if (id === SIGN) this.signs.delete(signKey(x, y, z));
+          this.world.set(x, y, z, AIR);
+          this.markEdit(x, z);
+          this.onLocalBlock?.(x, y, z, AIR);
+        }
+      }
+    }
+    const dx = this.pos.x - (cx + 0.5);
+    const dy = (this.pos.y + 1) - cy;
+    const dz = this.pos.z - (cz + 0.5);
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 6 && !this.dead) {
+      this.damage(Math.max(1, Math.round((6 - dist) * 2.2)));
+      const d = dist || 1;
+      this.vel.x += (dx / d) * 9;
+      this.vel.z += (dz / d) * 9;
+      this.vel.y = Math.max(this.vel.y, 7);
+    }
+  }
+
   private breakBlock(x: number, y: number, z: number) {
     const w = this.world;
     const oldId = w.get(x, y, z);
@@ -1291,3 +1379,7 @@ export class Engine {
 }
 
 export { CREATIVE_PALETTE };
+
+function isMx6(name: string) {
+  return name.trim().toLowerCase() === "mx6";
+}

@@ -38,6 +38,7 @@ export const GRAVEL = 36;
 export const CLAY = 37;
 export const ICE = 38;
 export const PUMPKIN = 39;
+export const TNT = 40;
 export const LAST_BLOCK = 39;
 
 // Non-block items
@@ -83,7 +84,7 @@ export const T = {
   IRON: 16, GOLD: 17, BASALT: 18, LANTERN: 19, WOOL: 20, CACTUS_SIDE: 21, CACTUS_TOP: 22,
   FLOWER_RED: 23, FLOWER_YELLOW: 24, TALL_GRASS: 25, GOLD_BLOCK: 26, PINE_LEAVES: 27, FURNACE: 28,
   OBSIDIAN: 29, NETHERRACK: 30, SOUL_SAND: 31, GLOWSTONE: 32, NETHER_BRICK: 33, MAGMA: 34,
-  NETHER_PORTAL: 35, BLACKSTONE: 36, QUARTZ: 37, GRAVEL: 38, CLAY: 39, ICE: 40, PUMPKIN_SIDE: 41, PUMPKIN_TOP: 42,
+  NETHER_PORTAL: 35, BLACKSTONE: 36, QUARTZ: 37, GRAVEL: 38, CLAY: 39, ICE: 40, PUMPKIN_SIDE: 41, PUMPKIN_TOP: 42, TNT: 43,
 } as const;
 
 export interface BlockDef {
@@ -160,6 +161,7 @@ reg(GRAVEL, "Gravel", "#8a8580", T.GRAVEL, { hardness: 0.6 });
 reg(CLAY, "Clay", "#9aa4b0", T.CLAY, { hardness: 0.6 });
 reg(ICE, "Ice", "#a8d8f0", T.ICE, { opaque: false, transparent: true, hardness: 0.5 });
 reg(PUMPKIN, "Pumpkin", "#e09030", [T.PUMPKIN_TOP, T.PUMPKIN_TOP, T.PUMPKIN_SIDE], { hardness: 0.9 });
+reg(TNT, "TNT", "#c43030", T.TNT, { hardness: 0.2 });
 
 export const BLOCKS = DEFS;
 export function block(id: number): BlockDef {

@@ -152,6 +152,10 @@ const painters: Record<number, (x: number, y: number) => RGBA> = {
     if (x >= 6 && x <= 9 && y >= 6 && y <= 9) return shade("#3a6a20", 0.1, x, y, 118);
     return shade("#e09030", 0.12, x, y, 119);
   },
+  [T.TNT]: (x, y) => {
+    if (y >= 6 && y <= 9) return shade("#f2f2f2", 0.06, x, y, 130);
+    return shade(nse(x, y, 131) > 0.55 ? "#e0453a" : "#a61e1e", 0.1, x, y, 132);
+  },
 };
 
 function ore(base: number, hex: string, salt: number) {

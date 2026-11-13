@@ -28,6 +28,9 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const [online, setOnline] = useState(1);
   const [status, setStatus] = useState("Connecting");
   const [muted, setMuted] = useState(sfx.muted);
+  const [mx6Open, setMx6Open] = useState(false);
+  const [mx6, setMx6] = useState({ fps: 0, seed: 0, chunks: 0, yaw: 0, pitch: 0, fuses: 0, flying: false, health: 20 });
+  const admin = name.trim().toLowerCase() === "mx6";
 
   useEffect(() => {
     const el = host.current;
@@ -137,6 +140,17 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     };
   }, [seed, room, name]);
 
+  useEffect(() => {
+    if (!admin || !mx6Open) return;
+    const read = () => {
+      const info = engine.current?.mx6Debug();
+      if (info) setMx6(info);
+    };
+    read();
+    const id = window.setInterval(read, 250);
+    return () => window.clearInterval(id);
+  }, [admin, mx6Open]);
+
   const e = () => engine.current;
   const toggleSound = () => {
     sfx.unlock();
@@ -165,6 +179,11 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           <button data-hud type="button" className="menu-btn" onClick={() => e()?.setPaused(true)}>
             Menu
           </button>
+          {admin && (
+            <button data-hud type="button" className="menu-btn" onClick={() => setMx6Open((v) => !v)}>
+              MX6 Debug
+            </button>
+          )}
         </div>
       </div>
 
@@ -250,6 +269,24 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           Place
         </button>
       </div>
+
+      {admin && mx6Open && (
+        <div className="mx6" data-hud>
+          <h2>MX6 Debug</h2>
+          <p>FPS {mx6.fps} · chunks {mx6.chunks} · seed {mx6.seed}</p>
+          <p>
+            pos {hud ? `${hud.pos[0]} ${hud.pos[1]} ${hud.pos[2]}` : "…"} · hp {mx6.health}
+            {mx6.flying ? " · flying" : ""}
+          </p>
+          <p>
+            look {mx6.yaw.toFixed(2)} / {mx6.pitch.toFixed(2)} · fuses {mx6.fuses}
+          </p>
+          <p>{status || "online"} · {online} in room</p>
+          <button type="button" onClick={() => engine.current?.spawnLitTnt()}>Spawn lit TNT</button>
+          <button type="button" onClick={() => engine.current?.mx6Heal()}>Heal</button>
+          <button type="button" onClick={() => setMx6Open(false)}>Close</button>
+        </div>
+      )}
 
       {picker && (
         <div className="pause" onClick={() => setPicker(false)}>
