@@ -52,6 +52,9 @@ export const RAW_BEEF = 107;
 export const COOKED_BEEF = 108;
 export const RAW_CHICKEN = 109;
 export const COOKED_CHICKEN = 116;
+export const ROTTEN_FLESH = 140;
+export const BONE = 141;
+export const STRING = 142;
 export const PICK_WOOD = 110;
 export const PICK_STONE = 111;
 export const PICK_IRON = 112;
@@ -188,6 +191,9 @@ const ITEMS: Record<number, ItemDef> = {
   [COOKED_BEEF]: { id: COOKED_BEEF, name: "Cooked Beef", color: "#8a3a20", kind: "food", heal: 8 },
   [RAW_CHICKEN]: { id: RAW_CHICKEN, name: "Raw Chicken", color: "#e8c9a0", kind: "food", heal: 2 },
   [COOKED_CHICKEN]: { id: COOKED_CHICKEN, name: "Cooked Chicken", color: "#d4a05a", kind: "food", heal: 6 },
+  [ROTTEN_FLESH]: { id: ROTTEN_FLESH, name: "Rotten Flesh", color: "#7a8f4a", kind: "material" },
+  [BONE]: { id: BONE, name: "Bone", color: "#e8e6da", kind: "material" },
+  [STRING]: { id: STRING, name: "String", color: "#dcdcdc", kind: "material" },
   [PICK_WOOD]: { id: PICK_WOOD, name: "Wood Pickaxe", color: "#b88b52", kind: "pick", speed: 2.2 },
   [PICK_STONE]: { id: PICK_STONE, name: "Stone Pickaxe", color: "#9a9aa0", kind: "pick", speed: 3.6 },
   [PICK_IRON]: { id: PICK_IRON, name: "Iron Pickaxe", color: "#e6cdbb", kind: "pick", speed: 5.8 },
@@ -227,6 +233,7 @@ for (let i = 1; i <= LAST_BLOCK; i++) if (i !== WATER && i !== BASALT) CREATIVE_
 CREATIVE_PALETTE.push(
   COAL, IRON, GOLD, STICK,
   MEAT, RAW_PORK, COOKED_PORK, RAW_BEEF, COOKED_BEEF, RAW_CHICKEN, COOKED_CHICKEN,
+  ROTTEN_FLESH, BONE, STRING,
   PICK_WOOD, PICK_STONE, PICK_IRON, PICK_GOLD, PICK_OBSIDIAN,
   SWORD_WOOD, SWORD_STONE, SWORD_IRON, SWORD_GOLD, SWORD_OBSIDIAN,
   AXE_WOOD, AXE_STONE, AXE_IRON,

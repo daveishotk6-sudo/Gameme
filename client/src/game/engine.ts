@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN } from "./blocks";
-import { spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, type Mob } from "./mobs";
+import {
+  spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, spawnMonsters, isHostile, mobAim,
+  createArrow, updateArrow, disposeArrow, type Arrow, type Mob, type MobCtx,
+} from "./mobs";
 import { buildChunk, createTerrainMaterials } from "./mesh";
 import { writeSave, type SaveData } from "./save";
 import { Sky } from "./sky";
@@ -24,6 +27,7 @@ export interface HudState {
   dead: boolean;
   flying: boolean;
   tip: string;
+  mobMode: "all" | "passive" | "off";
 }
 
 export interface EngineOpts {
@@ -116,6 +120,17 @@ export class Engine {
   private stepDist = 0;
   private mineSfxT = 0;
   private mobs: Mob[] = [];
+  private arrows: Arrow[] = [];
+  private monsterT = 2;
+  /** all = animals and monsters, passive = animals only, off = no mobs at all. Saved on this device. */
+  mobMode: "all" | "passive" | "off" = (() => {
+    try {
+      const v = localStorage.getItem("gameme:mobmode");
+      return v === "passive" || v === "off" ? v : "all";
+    } catch {
+      return "all";
+    }
+  })();
   private mobTopUpT = 0;
   /** Time spent standing inside a nether portal (seconds). */
   private portalT = 0;
@@ -178,8 +193,10 @@ export class Engine {
     for (let i = 0; i < 64 && overlaps(this.world, this.pos.x, this.pos.y, this.pos.z); i++) this.pos.y += 1;
     this.syncChunks(true);
     // Dense passive animals near the player so they're visible immediately.
-    this.mobs = spawnHerd(this.world, this.pos, 6);
-    for (const m of this.mobs) this.scene.add(m.group);
+    if (this.mobMode !== "off") {
+      this.mobs = spawnHerd(this.world, this.pos, 6);
+      for (const m of this.mobs) this.scene.add(m.group);
+    }
     this.mobTopUpT = 0;
     this.bindInput(host);
     this.raf = requestAnimationFrame(this.frame);
@@ -444,6 +461,7 @@ export class Engine {
     this.ghosts.clear();
     for (const m of this.mobs) { this.scene.remove(m.group); disposeMob(m); }
     this.mobs = [];
+    this.clearArrows();
     this.mats.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -646,6 +664,7 @@ export class Engine {
       air: Math.max(0, Math.ceil(this.air)),
       hurt: this.hurt,
       dead: this.dead,
+      mobMode: this.mobMode,
       flying: this.flying,
       tip: this.smeltMsgT > 0 ? this.smeltMsg : "",
     });
@@ -901,6 +920,7 @@ export class Engine {
       disposeMob(m);
     }
     this.mobs = [];
+    this.clearArrows();
 
     this.world.setDim(dim);
     let x = this.pos.x;
@@ -928,7 +948,7 @@ export class Engine {
     this.pos.z = z;
     this.vel.x = this.vel.y = this.vel.z = 0;
     this.syncChunks(true);
-    if (dim === 0) {
+    if (dim === 0 && this.mobMode !== "off") {
       this.mobs = spawnHerd(this.world, this.pos, 6);
       for (const m of this.mobs) this.scene.add(m.group);
     }
@@ -937,12 +957,71 @@ export class Engine {
     sfx.block(OBSIDIAN, "place");
   }
 
-  private updateMobs(dt: number) {
+
+  /** Switch mobs on or off; applies immediately and is remembered on this device. */
+  setMobMode(mode: "all" | "passive" | "off") {
+    this.mobMode = mode;
+    try {
+      localStorage.setItem("gameme:mobmode", mode);
+    } catch {
+      /* storage unavailable */
+    }
     const keep: Mob[] = [];
     for (const m of this.mobs) {
-      // Cull animals that wandered very far away so we can respawn near the player.
+      if (mode === "off" || (mode === "passive" && isHostile(m.kind))) {
+        this.scene.remove(m.group);
+        disposeMob(m);
+      } else keep.push(m);
+    }
+    this.mobs = keep;
+    if (mode !== "all") this.clearArrows();
+    this.mobTopUpT = 0;
+    this.emit();
+  }
+
+  private clearArrows() {
+    for (const a of this.arrows) {
+      this.scene.remove(a.mesh);
+      disposeArrow(a);
+    }
+    this.arrows = [];
+  }
+
+  /** Damage from a monster, with a short grace period and a shove away from the attacker. */
+  private hurtByMob(dmg: number, fromX: number, fromZ: number) {
+    if (this.dead || this.hurtCd < 0.5) return;
+    this.damage(dmg);
+    const dx = this.pos.x - fromX, dz = this.pos.z - fromZ;
+    const d = Math.hypot(dx, dz) || 1;
+    this.vel.x += (dx / d) * 5;
+    this.vel.z += (dz / d) * 5;
+    this.vel.y = Math.max(this.vel.y, 4.5);
+    sfx.hurt();
+  }
+
+  private updateMobs(dt: number) {
+    if (this.mobMode === "off") return;
+    const ctx: MobCtx = {
+      hostileOn: this.mobMode === "all" && !this.dead,
+      hurtPlayer: (dmg, fx, fz) => this.hurtByMob(dmg, fx, fz),
+      shoot: (from, to) => {
+        const a = createArrow(from, to);
+        this.scene.add(a.mesh);
+        this.arrows.push(a);
+      },
+    };
+    const sunny = this.dayFactor > 0.6;
+    const keep: Mob[] = [];
+    for (const m of this.mobs) {
+      // Cull mobs that wandered very far away so we can respawn near the player.
       const far = Math.hypot(m.pos.x - this.pos.x, m.pos.z - this.pos.z) > 64;
-      if (far || !updateMob(m, this.world, dt, this.pos)) {
+      // Surface monsters burn away in daylight; ones in caves stay.
+      if (isHostile(m.kind) && sunny && this.world.exposure(m.pos.x, m.pos.y + 1, m.pos.z) > 0.99) {
+        m.hp -= dt * 4;
+        m.hurtT = Math.max(m.hurtT, 0.1);
+        if (m.hp <= 0) m.dead = true;
+      }
+      if (far || !updateMob(m, this.world, dt, this.pos, ctx)) {
         this.scene.remove(m.group);
         disposeMob(m);
         continue;
@@ -951,14 +1030,42 @@ export class Engine {
     }
     this.mobs = keep;
 
+    // Arrows in flight.
+    this.arrows = this.arrows.filter((a) => {
+      const alive = updateArrow(a, this.world, dt, this.pos, (fx, fz) => this.hurtByMob(3, fx, fz));
+      if (!alive) {
+        this.scene.remove(a.mesh);
+        disposeArrow(a);
+      }
+      return alive;
+    });
+
     // Keep the area stocked with animals.
     this.mobTopUpT -= dt;
     if (this.mobTopUpT <= 0) {
       this.mobTopUpT = 4;
-      const added = topUpMobs(this.world, this.mobs, this.pos, 6);
+      const added = topUpMobs(this.world, this.mobs.filter((m) => !isHostile(m.kind)), this.pos, 6);
       for (const m of added) {
         this.scene.add(m.group);
         this.mobs.push(m);
+      }
+    }
+
+    // Monsters: more of them at night on the surface, a few in dark caves, none by day in the open.
+    if (this.mobMode === "all" && !this.dead) {
+      this.monsterT -= dt;
+      if (this.monsterT <= 0) {
+        this.monsterT = 3;
+        const hostile = this.mobs.filter((m) => isHostile(m.kind)).length;
+        const headLight = this.world.exposure(this.pos.x, this.pos.y + 1, this.pos.z);
+        const where = this.dayFactor < 0.3 && headLight > 0.99 ? "surface" : headLight < 0.3 ? "cave" : null;
+        const cap = where === "surface" ? 5 : where === "cave" ? 3 : 0;
+        if (where && hostile < cap) {
+          for (const m of spawnMonsters(this.world, this.pos, Math.min(2, cap - hostile), where)) {
+            this.scene.add(m.group);
+            this.mobs.push(m);
+          }
+        }
       }
     }
   }
@@ -1012,11 +1119,12 @@ export class Engine {
       let best = reach;
       for (const m of this.mobs) {
         if (m.dead) continue;
-        const mx = m.pos.x - ex, my = m.pos.y + 0.4 - ey, mz = m.pos.z - ez;
+        const aim = mobAim(m);
+        const mx = m.pos.x - ex, my = aim.cy - ey, mz = m.pos.z - ez;
         const t = mx * dx + my * dy + mz * dz;
         if (t < 0.3 || t > best) continue;
         const px = ex + dx * t, py = ey + dy * t, pz = ez + dz * t;
-        if (Math.hypot(px - m.pos.x, py - (m.pos.y + 0.4), pz - m.pos.z) < 0.7) {
+        if (Math.hypot(px - m.pos.x, py - aim.cy, pz - m.pos.z) < aim.r) {
           best = t;
           aimedMob = m;
         }
@@ -1033,6 +1141,9 @@ export class Engine {
         ? (info.dmg ?? 4)
         : 2;
       const died = hitMob(aimedMob, dmg);
+      aimedMob.vel.x += dx * 4;
+      aimedMob.vel.z += dz * 4;
+      aimedMob.vel.y = Math.max(aimedMob.vel.y, 4);
       sfx.hurt();
       this.mineCd = 0.35;
       this.fxMining = true;

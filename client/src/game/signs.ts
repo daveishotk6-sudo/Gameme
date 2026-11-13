@@ -59,7 +59,7 @@ function drawBoard(text: string) {
 export interface SignObject {
   group: THREE.Group;
   front: THREE.MeshBasicMaterial;
-  plain: THREE.MeshBasicMaterial[];
+  plain: { mat: THREE.MeshBasicMaterial; base: THREE.Color }[];
   text: string;
 }
 
@@ -77,7 +77,7 @@ export function buildSign(s: SignData): SignObject {
   group.add(p, b);
   group.position.set(s.x + 0.5, s.y, s.z + 0.5);
   group.rotation.y = s.yaw;
-  return { group, front, plain: [post, edge, back], text: s.text };
+  return { group, front, plain: [post, edge, back].map((mat) => ({ mat, base: mat.color.clone() })), text: s.text };
 }
 
 export function retextSign(o: SignObject, text: string) {
@@ -94,10 +94,11 @@ export function disposeSign(o: SignObject) {
   });
   o.front.map?.dispose();
   o.front.dispose();
-  o.plain.forEach((m) => m.dispose());
+  o.plain.forEach((p) => p.mat.dispose());
 }
 
 export function shadeSign(o: SignObject, v: number) {
   o.front.color.setScalar(v);
-  o.plain.forEach((m) => m.color.setScalar(v));
+  // Scale each part's own colour; setting a flat grey here is what turned the frame and back white.
+  o.plain.forEach((p) => p.mat.color.copy(p.base).multiplyScalar(v));
 }

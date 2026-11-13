@@ -181,3 +181,8 @@ button { font: inherit; color: inherit; }
   overflow: auto;
   padding: 4px;
 }
+
+.seg-label { margin: 10px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+.seg { display: flex; gap: 6px; margin-bottom: 10px; }
+.seg button { flex: 1; padding: 9px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: inherit; font-size: 13px; }
+.seg button.on { background: #2f8f3d; border-color: #7be08a; }

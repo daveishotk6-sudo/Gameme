@@ -373,6 +373,25 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
               Resume
             </button>
             <button type="button" className="seed" onClick={toggleSound}>Sound: {muted ? "Off" : "On"}</button>
+            <div className="seg-label">Mobs</div>
+            <div className="seg">
+              {(
+                [
+                  ["all", "All"],
+                  ["passive", "Animals only"],
+                  ["off", "Off"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={hud?.mobMode === mode ? "on" : ""}
+                  onClick={() => e()?.setMobMode(mode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button type="button" className="exit" onClick={onExit}>Save &amp; Exit</button>
             <p className="note">WASD · Space jump · Fly: F or double-tap Space/Jump, or the Fly button (Up/Down buttons or Space/Shift to climb and descend) · Left click mine · Right click place · 1-9 or wheel to pick · tap the selected slot to change its block</p>
           </div>
