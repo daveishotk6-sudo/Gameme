@@ -153,7 +153,7 @@ reg(GLOWSTONE, "Glowstone", "#f5d76e", T.GLOWSTONE, { hardness: 0.4, light: true
 reg(NETHER_BRICK, "Nether Brick", "#3a1a1a", T.NETHER_BRICK, { hardness: 2.8, pick: true });
 reg(MAGMA, "Magma", "#c44a12", T.MAGMA, { hardness: 1.2, pick: true, light: true });
 reg(NETHER_PORTAL, "Nether Portal", "#7b2cff", T.NETHER_PORTAL, {
-  solid: false, opaque: false, transparent: true, hardness: Infinity, drop: null,
+  solid: false, opaque: false, transparent: true, hardness: 0.25, drop: null,
 });
 reg(BLACKSTONE, "Blackstone", "#2a2a30", T.BLACKSTONE, { hardness: 2.4, pick: true });
 reg(QUARTZ_BLOCK, "Quartz", "#e8e4dc", T.QUARTZ, { hardness: 1.4, pick: true });
