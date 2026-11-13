@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT, LAST_BLOCK, STONE, blockIdForColor } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT } from "./blocks";
 import {
   spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, spawnMonsters, isHostile, mobAim,
   createArrow, updateArrow, disposeArrow, type Arrow, type Mob, type MobCtx,
@@ -137,8 +137,6 @@ export class Engine {
   /** Time spent standing inside a nether portal (seconds). */
   private portalT = 0;
   private portalCooldown = 0;
-  /** MX6 AOE mine radius (1 = single block, 50 = huge sphere). */
-  breakRadius = 1;
   private furnaceProgress = 0;
   private furnaceTarget: { x: number; y: number; z: number } | null = null;
   private smeltMsg = "";
@@ -413,12 +411,6 @@ export class Engine {
   }
 
   /** MX6 debug only. Full heal, and clear a death if one is in progress. */
-  mx6ToggleBreakRadius() {
-    if (!isMx6(this.o.name)) return;
-    this.breakRadius = this.breakRadius >= 50 ? 1 : 50;
-    this.smeltMsg = `Break radius: ${this.breakRadius}`;
-    this.smeltMsgT = 2.5;
-  }
 
   mx6Heal() {
     if (!isMx6(this.o.name)) return;
@@ -455,76 +447,9 @@ export class Engine {
       fuses: this.fuses.length,
       flying: this.flying,
       health: this.health,
-      breakRadius: this.breakRadius,
     };
   }
 
-  /**
-   * MX6 only: turn a photo into a 32×32 wall of in-game blocks,
-   * 10 blocks ahead of where the player is facing.
-   */
-  mx6BuildPortraitFromImage(img: CanvasImageSource, srcW: number, srcH: number): number {
-    if (!isMx6(this.o.name)) return 0;
-    const SIZE = 32;
-    const canvas = document.createElement("canvas");
-    canvas.width = SIZE;
-    canvas.height = SIZE;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return 0;
-    const side = Math.min(srcW, srcH);
-    const sx = (srcW - side) / 2;
-    const sy = (srcH - side) / 2;
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
-    const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
-
-    // Create new solid-color blocks from the photo, then place them
-    this.mats.refreshAtlas(); // ensure registrar is live
-
-    const fx = -Math.sin(this.yaw);
-    const fz = -Math.cos(this.yaw);
-    const rx = Math.cos(this.yaw);
-    const rz = -Math.sin(this.yaw);
-    const dist = 10;
-    const ox = Math.floor(this.pos.x + fx * dist);
-    const oz = Math.floor(this.pos.z + fz * dist);
-    const oy = Math.max(0, Math.min(WH - 32, Math.floor(this.pos.y) - 8));
-
-    this.world.stream(ox, oz, this.rd + 2);
-
-    let placed = 0;
-    const used = new Set<number>();
-    for (let py = 0; py < SIZE; py++) {
-      for (let px = 0; px < SIZE; px++) {
-        const i = (py * SIZE + px) * 4;
-        const a = data[i + 3]!;
-        if (a < 8) continue;
-        const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
-        const id = blockIdForColor(r, g, b);
-        used.add(id);
-        const wx = Math.round(ox + rx * (px - (SIZE - 1) / 2));
-        const wy = oy + (SIZE - 1 - py);
-        const wz = Math.round(oz + rz * (px - (SIZE - 1) / 2));
-        if (wy < 0 || wy >= WH) continue;
-        this.world.set(wx, wy, wz, id);
-        this.markEdit(wx, wz);
-        this.onLocalBlock?.(wx, wy, wz, id);
-        placed++;
-      }
-    }
-    // Atlas may have new solid tiles — refresh GPU texture + opacity table
-    this.mats.refreshAtlas();
-    this.syncChunks(true);
-    for (const k of [...this.dirty]) this.rebuild(k);
-    this.dirty.clear();
-
-    this.smeltMsg = placed > 0
-      ? `Portrait ${placed} blocks · ${used.size} new colors · 10m ahead`
-      : "Portrait failed (no blocks)";
-    this.smeltMsgT = 4;
-    sfx.block(STONE, "place");
-    return placed;
-  }
 
   respawn() {
     this.health = 20;
@@ -1438,72 +1363,11 @@ export class Engine {
   }
 
   private breakBlock(x: number, y: number, z: number) {
-    const R = Math.max(1, this.breakRadius | 0);
-    if (R <= 1) {
-      this.breakOne(x, y, z, true);
-      return;
-    }
-
-    // Large AOE: edit world only, mark chunks once, do NOT fire one network
-    // event per block (that was freezing the tab at r=50).
-    const w = this.world;
-    const r2 = R * R;
-    const MAX = 12000; // hard cap so one click can't run forever
-    let n = 0;
-    const centerId = w.get(x, y, z);
-    sfx.block(centerId || STONE, "break");
-    this.fx.burst(x, y, z, centerId || STONE, 24, 4);
-
-    for (let dy = -R; dy <= R; dy++) {
-      for (let dx = -R; dx <= R; dx++) {
-        for (let dz = -R; dz <= R; dz++) {
-          if (dx * dx + dy * dy + dz * dz > r2) continue;
-          const bx = x + dx;
-          const by = y + dy;
-          const bz = z + dz;
-          if (by < 0 || by >= WH) continue;
-          const id = w.get(bx, by, bz);
-          if (id === AIR || id === BASALT) continue;
-          if (block(id).hardness === Infinity) continue;
-          if (id === SIGN) this.signs.delete(signKey(bx, by, bz));
-          w.set(bx, by, bz, AIR);
-          this.markEdit(bx, bz);
-          n++;
-          if (n >= MAX) break;
-        }
-        if (n >= MAX) break;
-      }
-      if (n >= MAX) break;
-    }
-
-    // Rebuild touched meshes once
-    for (const k of [...this.dirty]) this.rebuild(k);
-    this.dirty.clear();
-    this.syncSigns();
-
-    // One holder/photon-friendly snapshot instead of thousands of events
-    try {
-      const flat = this.world.dumpEdits();
-      // pushWorld if available on net via onLocalBlock path is per-block; skip.
-      // Holder still saves on next local place or leave.
-      void flat;
-    } catch { /* ignore */ }
-
-    this.mineCd = 0.35;
-    this.smeltMsg = n >= MAX
-      ? `Broke ${n}+ blocks (r=${R}, capped)`
-      : `Broke ${n} blocks (r=${R})`;
-    this.smeltMsgT = 2;
-  }
-
-  private breakOne(x: number, y: number, z: number, withFx: boolean) {
     const w = this.world;
     const oldId = w.get(x, y, z);
     if (oldId === AIR) return;
-    if (withFx) {
-      sfx.block(oldId, "break");
-      this.fx.burst(x, y, z, oldId, 16, 3);
-    }
+    sfx.block(oldId, "break");
+    this.fx.burst(x, y, z, oldId, 16, 3);
     if (oldId === SIGN) this.signs.delete(signKey(x, y, z));
     w.set(x, y, z, AIR);
     this.markEdit(x, z);
@@ -1516,40 +1380,9 @@ export class Engine {
   }
 }
 
+
 export { CREATIVE_PALETTE };
 
-
-/** Solid, opaque blocks good for photo→voxel portraits. */
-function portraitPalette(): { id: number; r: number; g: number; b: number }[] {
-  const out: { id: number; r: number; g: number; b: number }[] = [];
-  for (let id = 1; id <= LAST_BLOCK; id++) {
-    const d = block(id);
-    if (!d || !d.solid || !d.opaque || d.invisible || d.liquid) continue;
-    const hex = d.color.replace("#", "");
-    if (hex.length < 6) continue;
-    out.push({
-      id,
-      r: parseInt(hex.slice(0, 2), 16),
-      g: parseInt(hex.slice(2, 4), 16),
-      b: parseInt(hex.slice(4, 6), 16),
-    });
-  }
-  return out;
-}
-
-function nearestBlock(
-  palette: { id: number; r: number; g: number; b: number }[],
-  r: number, g: number, b: number,
-): number {
-  let best = palette[0]?.id ?? STONE;
-  let bestD = Infinity;
-  for (const p of palette) {
-    const dr = r - p.r, dg = g - p.g, db = b - p.b;
-    const d = dr * dr + dg * dg + db * db;
-    if (d < bestD) { bestD = d; best = p.id; }
-  }
-  return best;
-}
 
 function isMx6(name: string) {
   return name.trim().toLowerCase() === "mx6";
