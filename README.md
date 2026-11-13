@@ -37,31 +37,22 @@ Each room code becomes `data/{room}.json` on that server. Live multiplayer still
 ## Accounts (PlayFab, title `15169B`)
 
 Players must log in with a PlayFab account (just a name and a password, no email) to play. The username is
-stored lowercase, so `Dave` and `dave` can't both exist. The game then asks
-PlayFab for a one-time Photon token, and Photon checks it with PlayFab, so the room knows each player by their
-verified PlayFab ID and a modified client can't pretend to be another account.
+stored lowercase, so `Dave` and `dave` can't both exist. PlayFab is only the account. Photon rooms do not
+ask PlayFab to check a token.
 
 Only the public Title ID is in the code. **Never put the PlayFab Secret Key in this repo.**
 
-### Setup (do these in order)
+### Setup
 
 1. **PlayFab → Settings → API Features:** tick the box that prevents new accounts being created through
    anonymous login APIs (`LoginWithCustomID` etc.), so accounts can only be made through the game's signup
    (name + password).
-2. **PlayFab → Add-ons → Multiplayer → Photon:** add the Photon *Realtime* App ID
-   `d24bf2c0-bee9-42ea-91de-7c431ba4ccb0` (the same one as `PUN_APP_ID` in `client/src/net/photon.ts`).
-3. **Photon dashboard → your Realtime app → Manage → Authentication → Custom Server:** set the Authentication
-   URL to `https://15169B.playfabapi.com/photon/authenticate` and click Create. Leave "Allow anonymous clients"
-   ticked for now.
-4. **Test it:** deploy, log in on two devices, join the same room and check you can see each other.
-5. **Then lock it:** back in the Photon dashboard, *untick* "Allow anonymous clients to connect". From now on
-   only players with a valid PlayFab token can join; old or modified clients are refused. Do this last: doing it
-   before steps 2 and 3 would stop everyone joining.
-6. *(Optional)* **PlayFab → Settings → Client Profile Options:** allow the display name, so names keep their
+2. **Photon dashboard → your Realtime app → Manage → Authentication:** leave custom authentication off, and
+   leave "Allow anonymous clients to connect" ticked. If a PlayFab Photon add-on or the URL
+   `https://15169B.playfabapi.com/photon/authenticate` is still set, remove it. Otherwise Photon will refuse
+   every join.
+3. *(Optional)* **PlayFab → Settings → Client Profile Options:** allow the display name, so names keep their
    capital letters in game (otherwise they show in lowercase).
-
-Until step 2 is done the game still works: it logs the PlayFab login in the console and connects without a
-verified identity (which step 5 later forbids).
 
 ### Lost passwords
 
@@ -77,5 +68,4 @@ progress on that account is gone).
   nothing at all tying an account to a real person. Someone writing a script could easily create many accounts. Stopping that needs a small signup server in
   front of PlayFab (rate limit per IP + CAPTCHA) and a PlayFab title policy that blocks direct
   `Client/RegisterPlayFabUser`.
-* In-game name tags come from the player's client. A modified client could still *display* another player's
-  name above its own head (it still can't act as that account).
+* In-game name tags come from the player's client. Photon does not check them against the PlayFab account.

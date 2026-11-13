@@ -62,8 +62,6 @@ function Home() {
         seed={seed}
         room={room}
         name={gameName(account)}
-        account={account}
-        onAuthLost={() => logOut("Your login was rejected or expired. Please log in again.")}
         onExit={() => setPlaying(false)}
       />
     );

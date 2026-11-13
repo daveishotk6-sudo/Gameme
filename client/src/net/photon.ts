@@ -1,7 +1,7 @@
 import Photon from "./photon-sdk.js";
 import { DAY_MS, DAY_START } from "../game/daycycle";
 
-/** Must match the Photon Realtime App ID entered in PlayFab's Photon add-on. */
+/** Photon Realtime App ID. PlayFab does not authenticate this connection. */
 export const PUN_APP_ID = "d24bf2c0-bee9-42ea-91de-7c431ba4ccb0";
 const REGION = "us";
 
@@ -34,20 +34,6 @@ type Handlers = {
   onGhosts: (ghosts: Ghosts) => void;
   /** Apply a batch of persisted world edits (join / room property / peer snapshot). */
   onWorld?: (edits: WorldEdit[]) => void;
-};
-
-/** Proof of identity for Photon's custom authentication (see playfab.ts). */
-export type PhotonAuth = { playFabId: string; token: string };
-
-export type ConnectOptions = {
-  /**
-   * Fetch a fresh identity token. Called before every connect and reconnect, because the token is
-   * single-use. Throw an error with `expired: true` if the login is over; any other error makes the
-   * game connect without a verified identity (which the Photon dashboard can forbid).
-   */
-  auth?: () => Promise<PhotonAuth>;
-  /** The login is no longer valid: send the player back to the login screen. */
-  onAuthLost?: () => void;
 };
 
 export type PhotonLink = {
@@ -130,7 +116,7 @@ function trimMap(m: Map<string, WorldEdit>, max = MAX_EDITS) {
   return m;
 }
 
-export function connectPhoton(room: string, name: string, h: Handlers, opts: ConnectOptions = {}): PhotonLink {
+export function connectPhoton(room: string, name: string, h: Handlers): PhotonLink {
   if (!Photon?.LoadBalancing?.LoadBalancingClient) {
     throw new Error("Photon SDK failed to load");
   }
@@ -149,48 +135,20 @@ export function connectPhoton(room: string, name: string, h: Handlers, opts: Con
   if (debug) client.setLogLevel(Photon.LogLevel.INFO);
   else client.setLogLevel(Photon.LogLevel.ERROR);
 
-  // Used only when there is no PlayFab identity (stable per session: changing it every retry causes flaps).
+  // Stable per session: changing it every retry causes flaps.
   const sessionUserId = newUserId();
   let activeRegion = REGION;
-  let authFailures = 0;
-  /** After Photon/PlayFab refuse the identity token, connect without it rather than logging the player out. */
-  let unverified = false;
-  const CUSTOM_AUTH = Photon.LoadBalancing.Constants.CustomAuthenticationType;
   const connectRoom = (): boolean => {
-    void (async () => {
-      try {
-        if (closed) return;
-        h.onStatus(`Connecting (${activeRegion})`);
-        let verified = false;
-        if (opts.auth && !unverified) {
-          try {
-            const a = await opts.auth();
-            if (closed) return;
-            // Photon forwards this query string to PlayFab, which checks the token. Don't also send a
-            // userId: with custom auth, the verified PlayFab ID becomes the userId.
-            client.setUserId("");
-            client.setCustomAuthentication(`username=${encodeURIComponent(a.playFabId)}&token=${encodeURIComponent(a.token)}`, CUSTOM_AUTH.Custom);
-            verified = true;
-          } catch (err) {
-            if ((err as { expired?: boolean })?.expired) {
-              h.onStatus("Login expired");
-              opts.onAuthLost?.();
-              return;
-            }
-            console.warn("[photon] PlayFab identity unavailable, connecting without it:", err);
-          }
-        }
-        if (!verified) {
-          client.setCustomAuthentication("", CUSTOM_AUTH.None);
-          client.setUserId(sessionUserId);
-        }
-        if (closed) return;
-        if (!client.connectToRegionMaster(activeRegion)) roomRetry.schedule();
-      } catch (err) {
-        h.onStatus(String((err as Error)?.message || err));
-        roomRetry.schedule();
-      }
-    })();
+    try {
+      if (closed) return true;
+      h.onStatus(`Connecting (${activeRegion})`);
+      client.setCustomAuthentication("", Photon.LoadBalancing.Constants.CustomAuthenticationType.None);
+      client.setUserId(sessionUserId);
+      if (!client.connectToRegionMaster(activeRegion)) roomRetry.schedule();
+    } catch (err) {
+      h.onStatus(String((err as Error)?.message || err));
+      roomRetry.schedule();
+    }
     return true;
   };
   const roomRetry = makeRetry(connectRoom, isClosed);
@@ -328,7 +286,6 @@ export function connectPhoton(room: string, name: string, h: Handlers, opts: Con
       client.joinRoom(safe, { createIfNotExists: true }, { maxPlayers: 16 });
     }
     if (state === LBC.State.Joined) {
-      authFailures = 0;
       roomRetry.reset();
       h.onCount(client.myRoomActorCount());
       client.syncServerTime();
@@ -370,22 +327,8 @@ export function connectPhoton(room: string, name: string, h: Handlers, opts: Con
     }
   };
   client.onError = (code: number, msg: string) => {
-    const textMsg = msg || `Photon error ${code}`;
-    h.onStatus(textMsg);
-    // 32755 / 32753: Photon (via PlayFab) refused our identity token. That is a server-side setup problem
-    // (app ID or custom-auth URL mismatch between Photon and PlayFab), not something a fresh login fixes, so
-    // don't throw the player back to the login screen. Try once without the identity, then play offline.
-    if (/32755|32753/.test(String(code) + " " + textMsg) || /custom authentication/i.test(textMsg)) {
-      authFailures++;
-      if (opts.auth && !unverified) {
-        unverified = true;
-        h.onStatus("Login service refused – joining without a verified name");
-      } else {
-        h.onStatus("Multiplayer offline (Photon login setup error)");
-      }
-    }
+    h.onStatus(msg || `Photon error ${code}`);
     if (debug) console.warn("[photon]", code, msg);
-    // Don't force an extra reconnect here — onStateChange(Disconnected) already does.
   };
   client.onActorJoin = (actor?: { actorNr: number }) => {
     h.onCount(client.myRoomActorCount());

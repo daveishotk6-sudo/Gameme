@@ -7,7 +7,6 @@
  * "Dave" and "dave" can never both exist. The name shown in game is the display name the player picked
  * when signing up. With no email there is no password reset: a lost password means a lost account.
  */
-import { PUN_APP_ID } from "./photon";
 
 const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 export const TITLE_ID = env.VITE_PLAYFAB_TITLE_ID || "15169B";
@@ -211,16 +210,4 @@ export async function loginAccount(nameOrEmail: string, password: string): Promi
 export async function checkSession(a: Account): Promise<Account> {
   const d = await call<{ AccountInfo?: { Username?: string; TitleInfo?: { DisplayName?: string } } }>("/Client/GetAccountInfo", {}, a.sessionTicket);
   return { ...a, displayName: d.AccountInfo?.TitleInfo?.DisplayName || a.displayName };
-}
-
-// ------------------------------------------------------------------ Photon identity
-
-/**
- * A one-time token proving to Photon who this player is. Photon passes it to PlayFab to check, and
- * the room then knows the player by their PlayFab ID instead of whatever the browser claims.
- * Needs the PlayFab "Photon" add-on to be set up (see README).
- */
-export async function getPhotonAuth(a: Account): Promise<{ playFabId: string; token: string }> {
-  const d = await call<{ PhotonCustomAuthenticationToken: string }>("/Client/GetPhotonAuthenticationToken", { PhotonApplicationId: PUN_APP_ID }, a.sessionTicket);
-  return { playFabId: a.playFabId, token: d.PhotonCustomAuthenticationToken };
 }
