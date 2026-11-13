@@ -4,6 +4,50 @@ import VoxelView from "./game/VoxelView";
 import AuthPanel from "./AuthPanel";
 import { checkSession, clearAccount, explain, gameName, loadAccount, PlayFabError, saveAccount, type Account } from "./net/playfab";
 import "./styles.css";
+import { HOLDER_URL } from "./net/holder";
+import { clearRoomLocal } from "./game/save";
+
+function safeRoom(name: string) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 48) || "world";
+}
+
+/** /api/reset/:room — works even when Vercel serves the SPA for that path. */
+function ResetWorld({ room }: { room: string }) {
+  const [msg, setMsg] = useState("Resetting…");
+  useEffect(() => {
+    const r = safeRoom(room);
+    void (async () => {
+      try {
+        const res = await fetch(`${HOLDER_URL.replace(/\/$/, "")}/api/worlds/${encodeURIComponent(r)}`, {
+          method: "DELETE",
+        });
+        const data = await res.json().catch(() => ({}));
+        clearRoomLocal(r);
+        setMsg(
+          res.ok
+            ? `Room "${r}" wiped on Holder and local cache cleared.`
+            : `Holder returned ${res.status}: ${JSON.stringify(data)}`,
+        );
+      } catch (e) {
+        clearRoomLocal(r);
+        setMsg(`Network error (${String(e)}). Local cache still cleared.`);
+      }
+    })();
+  }, [room]);
+  return (
+    <main className="menu">
+      <div className="card">
+        <p className="kicker">WORLD RESET</p>
+        <h1>Done</h1>
+        <p>{msg}</p>
+        <button type="button" className="play" onClick={() => { window.location.href = "/"; }}>
+          Back to Gameme
+        </button>
+      </div>
+    </main>
+  );
+}
+
 
 function codeSeed(code: string) {
   let s = 0;
@@ -134,8 +178,14 @@ function Home() {
   );
 }
 
+function Root() {
+  const m = window.location.pathname.match(/^\/api\/reset\/([^/]+)\/?$/i);
+  if (m?.[1]) return <ResetWorld room={decodeURIComponent(m[1])} />;
+  return <Home />;
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Home />
+    <Root />
   </StrictMode>,
 );
