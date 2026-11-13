@@ -2,7 +2,8 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import VoxelView from "./game/VoxelView";
 import AuthPanel from "./AuthPanel";
-import { checkSession, clearAccount, explain, gameName, loadAccount, PlayFabError, saveAccount, type Account } from "./net/playfab";
+import BanScreen from "./BanScreen";
+import { BAN_CHECK_MS, banInfoFrom, checkSession, clearAccount, explain, gameName, loadAccount, PlayFabError, saveAccount, type Account, type BanInfo } from "./net/playfab";
 import "./styles.css";
 import { HOLDER_URL } from "./net/holder";
 import { clearRoomLocal } from "./game/save";
@@ -65,7 +66,8 @@ function codeSeed(code: string) {
 }
 
 /** checking: verifying a saved login · out: show login · in: logged in · down: PlayFab unreachable */
-type Phase = "checking" | "out" | "in" | "down";
+/** checking: verifying a saved login · out: show login · in: logged in · down: PlayFab unreachable · banned: ban screen */
+type Phase = "checking" | "out" | "in" | "down" | "banned";
 
 function Home() {
   const [playing, setPlaying] = useState(false);
@@ -74,6 +76,24 @@ function Home() {
   const [phase, setPhase] = useState<Phase>("checking");
   const [account, setAccount] = useState<Account | null>(null);
   const [notice, setNotice] = useState("");
+  const [ban, setBan] = useState<BanInfo | null>(null);
+
+  /** Leave the game and show why the player is banned. */
+  const showBan = useCallback((b: BanInfo) => {
+    clearAccount();
+    setAccount(null);
+    setPlaying(false);
+    setBan(b);
+    setPhase("banned");
+  }, []);
+
+  const logOut = useCallback((message = "") => {
+    clearAccount();
+    setAccount(null);
+    setPlaying(false);
+    setNotice(message);
+    setPhase("out");
+  }, []);
 
   // Is the saved login still good?
   const verify = useCallback(async () => {
@@ -89,25 +109,37 @@ function Home() {
       setAccount(fresh);
       setPhase("in");
     } catch (e) {
+      const b = banInfoFrom(e);
+      if (b) {
+        showBan(b);
+        return;
+      }
       if (e instanceof PlayFabError && e.expired) {
         clearAccount();
         setNotice(explain(e));
         setPhase("out");
       } else setPhase("down");
     }
-  }, []);
+  }, [showBan]);
 
   useEffect(() => {
     void verify();
   }, [verify]);
 
-  const logOut = (message = "") => {
-    clearAccount();
-    setAccount(null);
-    setPlaying(false);
-    setNotice(message);
-    setPhase("out");
-  };
+  // While playing, notice a ban within a minute and show it (otherwise it would only show at the next login).
+  useEffect(() => {
+    if (!playing || !account) return;
+    const id = window.setInterval(async () => {
+      try {
+        await checkSession(account);
+      } catch (e) {
+        const b = banInfoFrom(e);
+        if (b) showBan(b);
+        else if (e instanceof PlayFabError && e.expired) logOut("Your login expired. Please log in again.");
+      }
+    }, BAN_CHECK_MS);
+    return () => window.clearInterval(id);
+  }, [playing, account, showBan, logOut]);
 
   if (playing && phase === "in" && account) {
     return (
@@ -116,6 +148,19 @@ function Home() {
         room={room}
         name={gameName(account)}
         onExit={() => setPlaying(false)}
+      />
+    );
+  }
+
+  if (phase === "banned" && ban) {
+    return (
+      <BanScreen
+        ban={ban}
+        onBack={() => {
+          setBan(null);
+          setNotice("");
+          setPhase("out");
+        }}
       />
     );
   }
@@ -142,6 +187,7 @@ function Home() {
             <p>Log in to play. Your name belongs to your account alone: nobody else can use it.</p>
             {notice && <p className="err">{notice}</p>}
             <AuthPanel
+              onBanned={showBan}
               onAuthed={(a) => {
                 setAccount(a);
                 setNotice("");

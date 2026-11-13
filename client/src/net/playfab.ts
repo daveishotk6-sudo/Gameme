@@ -14,6 +14,8 @@ const BASE = `https://${TITLE_ID}.playfabapi.com`;
 
 const ACCOUNT_KEY = "gameme:playfab";
 const SIGNUP_KEY = "gameme:signup";
+/** While playing, how often (ms) to check that the account hasn't been banned. */
+export const BAN_CHECK_MS = Number(env.VITE_BAN_CHECK_MS) || 60_000;
 /** One new account per device per this many hours (a speed bump, not real protection: see README). */
 export const SIGNUP_COOLDOWN_HOURS = 24;
 
@@ -33,6 +35,8 @@ export class PlayFabError extends Error {
     /** PlayFab's error name, e.g. "UsernameNotAvailable", or "NETWORK". */
     public code = "",
     public errorCode = 0,
+    /** PlayFab's `errorDetails`. For a ban it maps the ban reason to its expiry time. */
+    public details: Record<string, string[]> = {},
   ) {
     super(message);
   }
@@ -118,9 +122,57 @@ async function call<T>(endpoint: string, body: Json, ticket?: string): Promise<T
   }
   if (!res.ok || !json || (json.code !== undefined && json.code !== 200)) {
     const detail = json?.errorDetails ? Object.values(json.errorDetails).flat().join(" ") : "";
-    throw new PlayFabError(res.status, json?.errorMessage ? `${json.errorMessage}${detail ? " " + detail : ""}` : `PlayFab error (${res.status})`, json?.error || "", json?.errorCode || 0);
+    throw new PlayFabError(
+      res.status,
+      json?.errorMessage ? `${json.errorMessage}${detail ? " " + detail : ""}` : `PlayFab error (${res.status})`,
+      json?.error || "",
+      json?.errorCode || 0,
+      json?.errorDetails || {},
+    );
   }
   return json.data as T;
+}
+
+// ------------------------------------------------------------------ bans
+
+/** Why and until when a player is banned. `until` is a time in ms, or "never" (permanent) / "unknown". */
+export type BanInfo = { reason: string; until: number | "never" | "unknown" };
+
+/** PlayFab sends expiry times in UTC; make sure a missing "Z" doesn't make us read it as local time. */
+function parseExpiry(raw: string): number | null {
+  const t = Date.parse(/^\d{4}-\d\d-\d\dT[\d:.]+$/.test(raw) ? raw + "Z" : raw);
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
+ * If this error is "account banned", the reason and expiry from it. PlayFab only includes them when the
+ * title setting "Allow client to view ban reason and duration" is on; without it we know the player is
+ * banned but not why or for how long.
+ */
+export function banInfoFrom(e: unknown): BanInfo | null {
+  if (!(e instanceof PlayFabError) || !(e.code === "AccountBanned" || e.errorCode === 1002)) return null;
+  const rank = (u: BanInfo["until"]) => (u === "never" ? Infinity : typeof u === "number" ? u : -1);
+  let best: BanInfo | null = null;
+  for (const [reason, v] of Object.entries(e.details || {})) {
+    const t = parseExpiry(String(Array.isArray(v) ? (v[0] ?? "") : (v ?? "")));
+    const cand: BanInfo = { reason: reason.trim() || "No reason given", until: t === null ? "never" : t };
+    if (!best || rank(cand.until) > rank(best.until)) best = cand; // several bans: show the one that lasts longest
+  }
+  return best ?? { reason: "No reason given", until: "unknown" };
+}
+
+/** "2d 3h 5m 12s" */
+export function formatRemaining(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (d || h) parts.push(`${h}h`);
+  if (d || h || m) parts.push(`${m}m`);
+  parts.push(`${s % 60}s`);
+  return parts.join(" ");
 }
 
 /** Plain-English message for a PlayFab error. */

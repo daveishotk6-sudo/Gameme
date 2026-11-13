@@ -51,8 +51,28 @@ Only the public Title ID is in the code. **Never put the PlayFab Secret Key in t
    leave "Allow anonymous clients to connect" ticked. If a PlayFab Photon add-on or the URL
    `https://15169B.playfabapi.com/photon/authenticate` is still set, remove it. Otherwise Photon will refuse
    every join.
-3. *(Optional)* **PlayFab → Settings → Client Profile Options:** allow the display name, so names keep their
+3. **PlayFab → Settings → API Features:** tick **Allow client to view ban reason and duration**. Without it
+   a banned player still gets the ban screen, but it says "No reason given" and "Time Till Expire: Unknown".
+4. *(Optional)* **PlayFab → Settings → Client Profile Options:** allow the display name, so names keep their
    capital letters in game (otherwise they show in lowercase).
+
+### Banning a player
+
+In PlayFab: **Players →** find the player **→ Bans →** add a ban. Enter a reason (up to 140 characters) and either
+a duration in hours or leave it blank for a permanent ban. The player then sees:
+
+    You have been banned
+
+    Reason: <your reason>
+    Time Till Expire: 2d 3h 5m 12s      (or "Never (permanent ban)")
+
+* Trying to log in while banned shows that screen, and the countdown ticks live. When it reaches zero it offers
+  "Log in again".
+* A player who is **already playing** is checked every 60 seconds and thrown out to the ban screen. Players are
+  not kicked the instant you ban them, and this check runs in the player's browser, so a modified client could
+  skip it. It stops normal players, not someone determined.
+* If you ban several times, the screen shows the ban that lasts longest. Banning by IP address can affect more
+  than one player.
 
 ### Lost passwords
 
@@ -62,7 +82,7 @@ progress on that account is gone).
 
 ### What this does and doesn't stop
 
-* One name per account, no impersonating another account, and banned players can't log back in.
+* One name per account, and banned players can't log back in until their ban ends.
 * The game limits one new account per device per 24 hours. That is only a speed bump: clearing site data resets it.
 * PlayFab itself does **not** limit how many accounts one person can create, and with no email required there is
   nothing at all tying an account to a real person. Someone writing a script could easily create many accounts. Stopping that needs a small signup server in

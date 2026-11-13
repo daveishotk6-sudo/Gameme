@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { explain, loginAccount, registerAccount, saveAccount, validateName, type Account } from "./net/playfab";
+import { banInfoFrom, explain, loginAccount, registerAccount, saveAccount, validateName, type Account, type BanInfo } from "./net/playfab";
 
 type Mode = "login" | "register";
 
-export default function AuthPanel({ onAuthed }: { onAuthed: (a: Account) => void }) {
+export default function AuthPanel({ onAuthed, onBanned }: { onAuthed: (a: Account) => void; onBanned: (b: BanInfo) => void }) {
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -34,7 +34,9 @@ export default function AuthPanel({ onAuthed }: { onAuthed: (a: Account) => void
       saveAccount(a);
       onAuthed(a);
     } catch (e) {
-      setError(explain(e));
+      const ban = banInfoFrom(e);
+      if (ban) onBanned(ban);
+      else setError(explain(e));
       setBusy(false);
     }
   };
