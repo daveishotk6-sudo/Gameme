@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT, LAST_BLOCK, STONE } from "./blocks";
 import {
   spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, spawnMonsters, isHostile, mobAim,
   createArrow, updateArrow, disposeArrow, type Arrow, type Mob, type MobCtx,
@@ -160,8 +160,7 @@ export class Engine {
 
   constructor(private o: EngineOpts) {
     const { host, seed, save, touch } = o;
-    const isMx6 = o.name.trim().toLowerCase() === "mx6";
-    this.rd = isMx6 ? (touch ? 5 : 6) : (touch ? 2 : 3);
+    this.rd = touch ? 2 : 3;
     this.world = new World(seed);
     if (save) {
       this.world.loadEdits(save.edits);
@@ -175,7 +174,7 @@ export class Engine {
     this.pos = { x: p[0]!, y: p[1]!, z: p[2]! };
     if (save) { this.yaw = save.yaw; this.pitch = save.pitch; }
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(touch ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(host.clientWidth, host.clientHeight);
     host.appendChild(this.renderer.domElement);
@@ -437,26 +436,6 @@ export class Engine {
     this.fuses.push({ x, y, z, t: 2.2 });
   }
 
-  /** 64×64 center-crop portrait of the live 3D view (pixel-scaled). */
-  mx6Portrait(): string {
-    const src = this.renderer.domElement;
-    const out = document.createElement("canvas");
-    out.width = 64;
-    out.height = 64;
-    const ctx = out.getContext("2d");
-    if (!ctx || src.width < 2 || src.height < 2) return "";
-    const side = Math.min(src.width, src.height);
-    const sx = (src.width - side) / 2;
-    const sy = (src.height - side) / 2;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(src, sx, sy, side, side, 0, 0, 64, 64);
-    try {
-      return out.toDataURL("image/png");
-    } catch {
-      return "";
-    }
-  }
-
   mx6Debug() {
     return {
       fps: Math.round(this.fps),
@@ -467,9 +446,62 @@ export class Engine {
       fuses: this.fuses.length,
       flying: this.flying,
       health: this.health,
-      portrait: this.mx6Portrait(),
-      reach: this.o.name.trim().toLowerCase() === "mx6" ? 128 : 32,
     };
+  }
+
+  /**
+   * MX6 only: turn a photo into a 64×64 wall of in-game blocks in front of the player.
+   * Maps each pixel to the nearest solid block color.
+   */
+  mx6BuildPortraitFromImage(img: CanvasImageSource, srcW: number, srcH: number): number {
+    if (!isMx6(this.o.name)) return 0;
+    const SIZE = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = SIZE;
+    canvas.height = SIZE;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return 0;
+    // Cover-crop to square then scale to 64²
+    const side = Math.min(srcW, srcH);
+    const sx = (srcW - side) / 2;
+    const sy = (srcH - side) / 2;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
+    const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+
+    const palette = portraitPalette();
+    // Facing direction + right vector so the wall faces the player
+    const fx = -Math.sin(this.yaw);
+    const fz = -Math.cos(this.yaw);
+    const rx = Math.cos(this.yaw);
+    const rz = -Math.sin(this.yaw);
+    const dist = 6;
+    const ox = Math.floor(this.pos.x + fx * dist);
+    const oz = Math.floor(this.pos.z + fz * dist);
+    const oy = Math.floor(this.pos.y);
+
+    let placed = 0;
+    for (let py = 0; py < SIZE; py++) {
+      for (let px = 0; px < SIZE; px++) {
+        const i = (py * SIZE + px) * 4;
+        const a = data[i + 3]!;
+        if (a < 20) continue;
+        const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
+        const id = nearestBlock(palette, r, g, b);
+        // px left→right on wall, py bottom→top (image y is top→bottom)
+        const wx = Math.round(ox + rx * (px - SIZE / 2));
+        const wy = oy + (SIZE - 1 - py);
+        const wz = Math.round(oz + rz * (px - SIZE / 2));
+        if (wy < 1 || wy >= WH - 1) continue;
+        this.world.set(wx, wy, wz, id);
+        this.onLocalBlock?.(wx, wy, wz, id);
+        placed++;
+      }
+    }
+    this.syncChunks(true);
+    this.smeltMsg = `Portrait: ${placed} blocks`;
+    this.smeltMsgT = 3;
+    return placed;
   }
 
   respawn() {
@@ -1168,8 +1200,7 @@ export class Engine {
     const dx = -Math.sin(this.yaw) * Math.cos(this.pitch);
     const dy = Math.sin(this.pitch);
     const dz = -Math.cos(this.yaw) * Math.cos(this.pitch);
-    const reach = this.o.name.trim().toLowerCase() === "mx6" ? 128 : 32;
-    this.hit = raycast(w, ex, ey, ez, dx, dy, dz, reach);
+    this.hit = raycast(w, ex, ey, ez, dx, dy, dz, 5.5);
     const hit = this.hit;
     if (hit) {
       this.outline.visible = true;
@@ -1403,6 +1434,39 @@ export class Engine {
 }
 
 export { CREATIVE_PALETTE };
+
+
+/** Solid, opaque blocks good for photo→voxel portraits. */
+function portraitPalette(): { id: number; r: number; g: number; b: number }[] {
+  const out: { id: number; r: number; g: number; b: number }[] = [];
+  for (let id = 1; id <= LAST_BLOCK; id++) {
+    const d = block(id);
+    if (!d || !d.solid || !d.opaque || d.invisible || d.liquid) continue;
+    const hex = d.color.replace("#", "");
+    if (hex.length < 6) continue;
+    out.push({
+      id,
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    });
+  }
+  return out;
+}
+
+function nearestBlock(
+  palette: { id: number; r: number; g: number; b: number }[],
+  r: number, g: number, b: number,
+): number {
+  let best = palette[0]?.id ?? STONE;
+  let bestD = Infinity;
+  for (const p of palette) {
+    const dr = r - p.r, dg = g - p.g, db = b - p.b;
+    const d = dr * dr + dg * dg + db * db;
+    if (d < bestD) { bestD = d; best = p.id; }
+  }
+  return best;
+}
 
 function isMx6(name: string) {
   return name.trim().toLowerCase() === "mx6";

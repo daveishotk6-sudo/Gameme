@@ -228,3 +228,15 @@ button { font: inherit; color: inherit; }
 .who { margin: 6px 0 0; color: white; }
 .linkbtn { background: none; border: 0; padding: 0; margin-left: 8px; color: #7dd3fc; text-decoration: underline; font-size: 12px; }
 .linkbtn.block { display: block; margin: 12px auto 0; font-size: 13px; }
+
+.mx6-file {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #4c1d95;
+  border-radius: 8px;
+  font: 700 12px system-ui, sans-serif;
+  text-align: center;
+  cursor: pointer;
+}
+.mx6-file input { display: none; }
