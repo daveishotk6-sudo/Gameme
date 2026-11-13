@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT, LAST_BLOCK, STONE } from "./blocks";
+import { AIR, WATER, block, isReplaceable, CREATIVE_PALETTE, SIGN, FURNACE, COAL, SMELT, itemInfo, NETHER_PORTAL, OBSIDIAN, TNT, BASALT, LAST_BLOCK, STONE, blockIdForColor } from "./blocks";
 import {
   spawnHerd, topUpMobs, updateMob, hitMob, disposeMob, mobDrop, mobName, spawnMonsters, isHostile, mobAim,
   createArrow, updateArrow, disposeArrow, type Arrow, type Mob, type MobCtx,
@@ -137,6 +137,8 @@ export class Engine {
   /** Time spent standing inside a nether portal (seconds). */
   private portalT = 0;
   private portalCooldown = 0;
+  /** MX6 AOE mine radius (1 = single block, 50 = huge sphere). */
+  breakRadius = 1;
   private furnaceProgress = 0;
   private furnaceTarget: { x: number; y: number; z: number } | null = null;
   private smeltMsg = "";
@@ -411,6 +413,13 @@ export class Engine {
   }
 
   /** MX6 debug only. Full heal, and clear a death if one is in progress. */
+  mx6ToggleBreakRadius() {
+    if (!isMx6(this.o.name)) return;
+    this.breakRadius = this.breakRadius >= 50 ? 1 : 50;
+    this.smeltMsg = `Break radius: ${this.breakRadius}`;
+    this.smeltMsgT = 2.5;
+  }
+
   mx6Heal() {
     if (!isMx6(this.o.name)) return;
     this.health = 20;
@@ -446,6 +455,7 @@ export class Engine {
       fuses: this.fuses.length,
       flying: this.flying,
       health: this.health,
+      breakRadius: this.breakRadius,
     };
   }
 
@@ -468,10 +478,9 @@ export class Engine {
     ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
     const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
 
-    const palette = portraitPalette();
-    if (!palette.length) return 0;
+    // Create new solid-color blocks from the photo, then place them
+    this.mats.refreshAtlas(); // ensure registrar is live
 
-    // Look direction (horizontal) and right vector for the wall plane
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw);
@@ -479,22 +488,22 @@ export class Engine {
     const dist = 10;
     const ox = Math.floor(this.pos.x + fx * dist);
     const oz = Math.floor(this.pos.z + fz * dist);
-    // 32 tall — center near the player so it sits in view
     const oy = Math.max(0, Math.min(WH - 32, Math.floor(this.pos.y) - 8));
 
-    // Preload chunks under the wall so set() applies terrain edits
     this.world.stream(ox, oz, this.rd + 2);
 
     let placed = 0;
+    const used = new Set<number>();
     for (let py = 0; py < SIZE; py++) {
       for (let px = 0; px < SIZE; px++) {
         const i = (py * SIZE + px) * 4;
         const a = data[i + 3]!;
         if (a < 8) continue;
         const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
-        const id = nearestBlock(palette, r, g, b);
+        const id = blockIdForColor(r, g, b);
+        used.add(id);
         const wx = Math.round(ox + rx * (px - (SIZE - 1) / 2));
-        const wy = oy + (SIZE - 1 - py); // 0..63
+        const wy = oy + (SIZE - 1 - py);
         const wz = Math.round(oz + rz * (px - (SIZE - 1) / 2));
         if (wy < 0 || wy >= WH) continue;
         this.world.set(wx, wy, wz, id);
@@ -503,13 +512,14 @@ export class Engine {
         placed++;
       }
     }
-    // Force mesh rebuild for every dirty chunk now
+    // Atlas may have new solid tiles — refresh GPU texture + opacity table
+    this.mats.refreshAtlas();
     this.syncChunks(true);
     for (const k of [...this.dirty]) this.rebuild(k);
     this.dirty.clear();
 
     this.smeltMsg = placed > 0
-      ? `Portrait built ${placed} blocks · 32² · 10m ahead`
+      ? `Portrait ${placed} blocks · ${used.size} new colors · 10m ahead`
       : "Portrait failed (no blocks)";
     this.smeltMsgT = 4;
     sfx.block(STONE, "place");
@@ -1428,15 +1438,46 @@ export class Engine {
   }
 
   private breakBlock(x: number, y: number, z: number) {
+    const R = Math.max(1, this.breakRadius | 0);
+    if (R <= 1) {
+      this.breakOne(x, y, z, true);
+      return;
+    }
+    // Sphere of radius R (MX6 mega-break)
+    const r2 = R * R;
+    let n = 0;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        for (let dz = -R; dz <= R; dz++) {
+          if (dx * dx + dy * dy + dz * dz > r2) continue;
+          const bx = x + dx, by = y + dy, bz = z + dz;
+          if (by < 0 || by >= WH) continue;
+          const id = this.world.get(bx, by, bz);
+          if (id === AIR || id === BASALT) continue;
+          if (block(id).hardness === Infinity) continue;
+          this.breakOne(bx, by, bz, n === 0);
+          n++;
+        }
+      }
+    }
+    if (n > 1) {
+      this.smeltMsg = `Broke ${n} blocks (r=${R})`;
+      this.smeltMsgT = 1.5;
+    }
+  }
+
+  private breakOne(x: number, y: number, z: number, withFx: boolean) {
     const w = this.world;
     const oldId = w.get(x, y, z);
-    sfx.block(oldId, "break");
-    this.fx.burst(x, y, z, oldId, 16, 3);
+    if (oldId === AIR) return;
+    if (withFx) {
+      sfx.block(oldId, "break");
+      this.fx.burst(x, y, z, oldId, 16, 3);
+    }
     if (oldId === SIGN) this.signs.delete(signKey(x, y, z));
     w.set(x, y, z, AIR);
     this.markEdit(x, z);
     this.onLocalBlock?.(x, y, z, AIR);
-    // Plants sitting on the removed block pop off.
     if (block(w.get(x, y + 1, z)).cross) {
       w.set(x, y + 1, z, AIR);
       this.markEdit(x, z);

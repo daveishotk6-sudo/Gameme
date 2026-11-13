@@ -76,7 +76,7 @@ export const BOW = 127;
 
 export const TILE = 16;
 export const ATLAS_COLS = 8;
-export const ATLAS_ROWS = 6;
+export const ATLAS_ROWS = 16;
 
 export const T = {
   GRASS_TOP: 0, GRASS_SIDE: 1, DIRT: 2, STONE: 3, LOG_SIDE: 4, LOG_TOP: 5, LEAVES: 6, SAND: 7,
@@ -278,3 +278,69 @@ export const RECIPES: Recipe[] = [
   { out: [NETHER_BRICK, 4], inp: [[NETHERRACK, 4]] },
   { out: [OBSIDIAN, 1], inp: [[WATER, 1], [MAGMA, 1]] },
 ];
+
+
+/** Runtime solid-color blocks for photo portraits (ids 200–254). */
+export const CUSTOM_BLOCK_START = 200;
+let nextCustomId = CUSTOM_BLOCK_START;
+const colorKeyToId = new Map<string, number>();
+/** tile index assigned to each custom id (filled by mesh.registerSolidTile). */
+export const customTileOf = new Map<number, number>();
+
+export type SolidTileRegistrar = (r: number, g: number, b: number) => number;
+let solidTileRegistrar: SolidTileRegistrar | null = null;
+
+export function setSolidTileRegistrar(fn: SolidTileRegistrar) {
+  solidTileRegistrar = fn;
+}
+
+/** Quantize RGB and return/create a solid block id with that exact color. */
+export function blockIdForColor(r: number, g: number, b: number): number {
+  const rq = r & ~7;
+  const gq = g & ~7;
+  const bq = b & ~7;
+  const key = rq + "," + gq + "," + bq;
+  const existing = colorKeyToId.get(key);
+  if (existing != null) return existing;
+  if (nextCustomId > 254 || !solidTileRegistrar) {
+    // Fallback: nearest static block
+    let best = STONE;
+    let bestD = Infinity;
+    for (let id = 1; id <= LAST_BLOCK; id++) {
+      const d = DEFS[id];
+      if (!d || !d.solid || !d.opaque) continue;
+      const hex = d.color.replace("#", "");
+      if (hex.length < 6) continue;
+      const br = parseInt(hex.slice(0, 2), 16);
+      const bg = parseInt(hex.slice(2, 4), 16);
+      const bb = parseInt(hex.slice(4, 6), 16);
+      const dist = (rq - br) ** 2 + (gq - bg) ** 2 + (bq - bb) ** 2;
+      if (dist < bestD) { bestD = dist; best = id; }
+    }
+    return best;
+  }
+  const id = nextCustomId++;
+  const tile = solidTileRegistrar(rq, gq, bq);
+  const hex = "#" + [rq, gq, bq].map((v) => v.toString(16).padStart(2, "0")).join("");
+  DEFS[id] = {
+    id,
+    name: "Pigment " + hex,
+    color: hex,
+    top: tile,
+    bottom: tile,
+    side: tile,
+    solid: true,
+    opaque: true,
+    liquid: false,
+    cross: false,
+    transparent: false,
+    hardness: 0.4,
+    drop: id,
+    pick: false,
+    light: false,
+    invisible: false,
+  };
+  colorKeyToId.set(key, id);
+  customTileOf.set(id, tile);
+  return id;
+}

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { ATLAS_COLS, ATLAS_ROWS, AIR, T, TILE, block } from "./blocks";
+import { ATLAS_COLS, ATLAS_ROWS, AIR, T, TILE, block, setSolidTileRegistrar } from "./blocks";
 import { CS, WH, World, ck, cidx } from "./world";
 
 // ------------------------------------------------------------ atlas
@@ -192,6 +192,27 @@ plant(T.TALL_GRASS, (x, y) => {
 });
 
 let atlasCanvas: HTMLCanvasElement | null = null;
+let nextSolidTile = ATLAS_COLS * 6; // after the hand-painted tiles (rows 0–5)
+
+export function invalidateAtlas() {
+  atlasCanvas = null;
+}
+
+export function registerSolidTile(r: number, g: number, b: number): number {
+  const tile = nextSolidTile++;
+  const max = ATLAS_COLS * ATLAS_ROWS;
+  if (tile >= max) return T.STONE;
+  painters[tile] = () => [r, g, b, 255];
+  invalidateAtlas();
+  return tile;
+}
+
+setSolidTileRegistrar(registerSolidTile);
+
+export function refreshOpacityTable() {
+  for (let i = 0; i < 256; i++) OPQ[i] = block(i).opaque ? 1 : 0;
+}
+
 export function getAtlasCanvas() {
   if (atlasCanvas) return atlasCanvas;
   const canvas = document.createElement("canvas");
@@ -261,6 +282,7 @@ export interface TerrainMaterials {
   trans: THREE.ShaderMaterial;
   setSun(v: number): void;
   setFog(color: THREE.Color, near: number, far: number): void;
+  refreshAtlas(): void;
   dispose(): void;
 }
 
@@ -294,6 +316,12 @@ export function createTerrainMaterials(): TerrainMaterials {
       shared.fogColor.value.copy(color);
       shared.fogNear.value = near;
       shared.fogFar.value = far;
+    },
+    refreshAtlas() {
+      invalidateAtlas();
+      tex.image = getAtlasCanvas();
+      tex.needsUpdate = true;
+      refreshOpacityTable();
     },
     dispose() { tex.dispose(); opaque.dispose(); trans.dispose(); },
   };

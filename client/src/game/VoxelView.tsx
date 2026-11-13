@@ -29,7 +29,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const [status, setStatus] = useState("Connecting");
   const [muted, setMuted] = useState(sfx.muted);
   const [mx6Open, setMx6Open] = useState(false);
-  const [mx6, setMx6] = useState({ fps: 0, seed: 0, chunks: 0, yaw: 0, pitch: 0, fuses: 0, flying: false, health: 20 });
+  const [mx6, setMx6] = useState({ fps: 0, seed: 0, chunks: 0, yaw: 0, pitch: 0, fuses: 0, flying: false, health: 20, breakRadius: 1 });
   const admin = name.trim().toLowerCase() === "mx6";
 
   useEffect(() => {
@@ -283,7 +283,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           </p>
           <p>{status || "online"} · {online} in room</p>
           <label className="mx6-file">
-            Photo → 32×32 blocks
+            Photo → 32×32 new blocks
             <input
               type="file"
               accept="image/*"
@@ -303,6 +303,17 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
               }}
             />
           </label>
+          <button
+            type="button"
+            onClick={() => {
+              engine.current?.mx6ToggleBreakRadius();
+              const info = engine.current?.mx6Debug();
+              if (info) setMx6(info);
+              sfx.click();
+            }}
+          >
+            Break radius: {mx6.breakRadius}
+          </button>
           <button type="button" onClick={() => engine.current?.spawnLitTnt()}>Spawn lit TNT</button>
           <button type="button" onClick={() => engine.current?.mx6Heal()}>Heal</button>
           <button type="button" onClick={() => setMx6Open(false)}>Close</button>
