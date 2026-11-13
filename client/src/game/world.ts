@@ -585,7 +585,7 @@ export function raycast(world: World, ox: number, oy: number, oz: number, dx: nu
   let tmy = sy > 0 ? (y + 1 - oy) * tdy : sy < 0 ? (oy - y) * tdy : Infinity;
   let tmz = sz > 0 ? (z + 1 - oz) * tdz : sz < 0 ? (oz - z) * tdz : Infinity;
   let fx = 0, fy = 0, fz = 0, t = 0;
-  for (let i = 0; i < 64 && t <= max; i++) {
+  for (let i = 0; i < 256 && t <= max; i++) {
     const id = world.get(x, y, z);
     if (id !== AIR && id !== WATER) return { x, y, z, faceX: fx, faceY: fy, faceZ: fz, t };
     if (tmx < tmy && tmx < tmz) { x += sx; t = tmx; tmx += tdx; fx = -sx; fy = 0; fz = 0; }

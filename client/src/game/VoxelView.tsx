@@ -29,7 +29,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
   const [status, setStatus] = useState("Connecting");
   const [muted, setMuted] = useState(sfx.muted);
   const [mx6Open, setMx6Open] = useState(false);
-  const [mx6, setMx6] = useState({ fps: 0, seed: 0, chunks: 0, yaw: 0, pitch: 0, fuses: 0, flying: false, health: 20 });
+  const [mx6, setMx6] = useState({ fps: 0, seed: 0, chunks: 0, yaw: 0, pitch: 0, fuses: 0, flying: false, health: 20, portrait: "", reach: 32 });
   const admin = name.trim().toLowerCase() === "mx6";
 
   useEffect(() => {
@@ -273,15 +273,24 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
       {admin && mx6Open && (
         <div className="mx6" data-hud>
           <h2>MX6 Debug</h2>
-          <p>FPS {mx6.fps} · chunks {mx6.chunks} · seed {mx6.seed}</p>
-          <p>
-            pos {hud ? `${hud.pos[0]} ${hud.pos[1]} ${hud.pos[2]}` : "…"} · hp {mx6.health}
-            {mx6.flying ? " · flying" : ""}
-          </p>
-          <p>
-            look {mx6.yaw.toFixed(2)} / {mx6.pitch.toFixed(2)} · fuses {mx6.fuses}
-          </p>
-          <p>{status || "online"} · {online} in room</p>
+          <div className="mx6-row">
+            {mx6.portrait ? (
+              <img className="mx6-portrait" src={mx6.portrait} width={64} height={64} alt="64×64 view portrait" />
+            ) : (
+              <div className="mx6-portrait mx6-portrait-empty">64²</div>
+            )}
+            <div className="mx6-stats">
+              <p>FPS {mx6.fps} · chunks {mx6.chunks} · seed {mx6.seed}</p>
+              <p>
+                pos {hud ? `${hud.pos[0]} ${hud.pos[1]} ${hud.pos[2]}` : "…"} · hp {mx6.health}
+                {mx6.flying ? " · flying" : ""}
+              </p>
+              <p>
+                look {mx6.yaw.toFixed(2)} / {mx6.pitch.toFixed(2)} · fuses {mx6.fuses}
+              </p>
+              <p>reach {mx6.reach} · {status || "online"} · {online} in room</p>
+            </div>
+          </div>
           <button type="button" onClick={() => engine.current?.spawnLitTnt()}>Spawn lit TNT</button>
           <button type="button" onClick={() => engine.current?.mx6Heal()}>Heal</button>
           <button type="button" onClick={() => setMx6Open(false)}>Close</button>

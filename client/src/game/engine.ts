@@ -160,7 +160,8 @@ export class Engine {
 
   constructor(private o: EngineOpts) {
     const { host, seed, save, touch } = o;
-    this.rd = touch ? 2 : 3;
+    const isMx6 = o.name.trim().toLowerCase() === "mx6";
+    this.rd = isMx6 ? (touch ? 5 : 6) : (touch ? 2 : 3);
     this.world = new World(seed);
     if (save) {
       this.world.loadEdits(save.edits);
@@ -174,7 +175,7 @@ export class Engine {
     this.pos = { x: p[0]!, y: p[1]!, z: p[2]! };
     if (save) { this.yaw = save.yaw; this.pitch = save.pitch; }
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(touch ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(host.clientWidth, host.clientHeight);
     host.appendChild(this.renderer.domElement);
@@ -436,6 +437,26 @@ export class Engine {
     this.fuses.push({ x, y, z, t: 2.2 });
   }
 
+  /** 64×64 center-crop portrait of the live 3D view (pixel-scaled). */
+  mx6Portrait(): string {
+    const src = this.renderer.domElement;
+    const out = document.createElement("canvas");
+    out.width = 64;
+    out.height = 64;
+    const ctx = out.getContext("2d");
+    if (!ctx || src.width < 2 || src.height < 2) return "";
+    const side = Math.min(src.width, src.height);
+    const sx = (src.width - side) / 2;
+    const sy = (src.height - side) / 2;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, sx, sy, side, side, 0, 0, 64, 64);
+    try {
+      return out.toDataURL("image/png");
+    } catch {
+      return "";
+    }
+  }
+
   mx6Debug() {
     return {
       fps: Math.round(this.fps),
@@ -446,6 +467,8 @@ export class Engine {
       fuses: this.fuses.length,
       flying: this.flying,
       health: this.health,
+      portrait: this.mx6Portrait(),
+      reach: this.o.name.trim().toLowerCase() === "mx6" ? 128 : 32,
     };
   }
 
@@ -1145,7 +1168,8 @@ export class Engine {
     const dx = -Math.sin(this.yaw) * Math.cos(this.pitch);
     const dy = Math.sin(this.pitch);
     const dz = -Math.cos(this.yaw) * Math.cos(this.pitch);
-    this.hit = raycast(w, ex, ey, ez, dx, dy, dz, 5.5);
+    const reach = this.o.name.trim().toLowerCase() === "mx6" ? 128 : 32;
+    this.hit = raycast(w, ex, ey, ez, dx, dy, dz, reach);
     const hit = this.hit;
     if (hit) {
       this.outline.visible = true;
