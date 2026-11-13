@@ -3,7 +3,7 @@ import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE, itemInfo } from "./blocks";
 import { loadSave } from "./save";
 import { iconURL } from "./icons";
-import { SIGN_COLS, SIGN_LINES, type SignData } from "./signs";
+import { SIGN_MAX_BREAKS, SIGN_MAX_CHARS, type SignData } from "./signs";
 import { sfx } from "./audio";
 import { connectPhoton, type Ghosts, type PhotonLink } from "../net/photon";
 import { fetchWorld, makeHolderSync } from "../net/holder";
@@ -304,7 +304,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
             <h2>Sign</h2>
             <textarea
               autoFocus
-              rows={SIGN_LINES}
+              rows={7}
+              maxLength={SIGN_MAX_CHARS}
               value={signText}
               placeholder="Write something…"
               onChange={(ev) =>
@@ -312,13 +313,15 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
                   ev.target.value
                     .replace(/\r/g, "")
                     .split("\n")
-                    .slice(0, SIGN_LINES)
-                    .map((l) => l.slice(0, SIGN_COLS))
-                    .join("\n"),
+                    .slice(0, SIGN_MAX_BREAKS + 1)
+                    .join("\n")
+                    .slice(0, SIGN_MAX_CHARS),
                 )
               }
             />
-            <p className="note">Up to {SIGN_LINES} lines of {SIGN_COLS} characters. Everyone in the room can read it.</p>
+            <p className="note">
+              {signText.length}/{SIGN_MAX_CHARS} characters. Long text wraps and shrinks to fit the board. Everyone in the room can read it.
+            </p>
             <button
               type="button"
               className="resume"
