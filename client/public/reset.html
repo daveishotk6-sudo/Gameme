@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reset world</title>
+  <style>
+    body { font: 15px system-ui, sans-serif; background: #0a0a0c; color: #e4e4e7;
+      display: grid; place-items: center; min-height: 100vh; margin: 0; }
+    .card { background: #18181b; border: 1px solid #3f3f46; border-radius: 12px;
+      padding: 24px 28px; max-width: 440px; }
+    code { background: #27272a; padding: 2px 6px; border-radius: 4px; }
+    a, button { color: #a78bfa; }
+    button { display: block; width: 100%; margin-top: 16px; padding: 12px;
+      background: #4c1d95; color: #fff; border: 0; border-radius: 10px;
+      font: 700 15px system-ui, sans-serif; cursor: pointer; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>World reset</h1>
+    <p id="status">Working…</p>
+    <button type="button" onclick="location.href='/'">Back to Gameme</button>
+  </div>
+  <script>
+(function () {
+  var HOLDER = "https://holder-production.up.railway.app";
+  var params = new URLSearchParams(location.search);
+  var room = (params.get("room") || "hills")
+    .trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 48) || "hills";
+  var el = document.getElementById("status");
+  el.textContent = 'Resetting room "' + room + '"…';
+
+  function clearLocal() {
+    try {
+      ["gameme:save:v1:room-" + room, "gameme:edits:" + room, "gameme:ghosts:" + room]
+        .forEach(function (k) { localStorage.removeItem(k); });
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (!k) continue;
+        if (k.indexOf(room) !== -1 && (
+          k.indexOf("gameme:save:") === 0 ||
+          k.indexOf("gameme:edits:") === 0 ||
+          k.indexOf("gameme:ghosts:") === 0
+        )) localStorage.removeItem(k);
+      }
+    } catch (e) {}
+  }
+
+  fetch(HOLDER + "/api/worlds/" + encodeURIComponent(room), { method: "DELETE" })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (x) {
+      clearLocal();
+      el.textContent = x.ok
+        ? 'Room "' + room + '" wiped on Holder. Local cache cleared.'
+        : "Holder error: " + JSON.stringify(x.j);
+      if (!x.ok) el.className = "err";
+    })
+    .catch(function (e) {
+      clearLocal();
+      el.className = "err";
+      el.textContent = "Request failed: " + e + " (local cache still cleared)";
+    });
+})();
+  </script>
+</body>
+</html>

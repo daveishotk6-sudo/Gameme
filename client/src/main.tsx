@@ -11,38 +11,47 @@ function safeRoom(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 48) || "world";
 }
 
-/** /api/reset/:room — works even when Vercel serves the SPA for that path. */
+/** /api/reset/:room — SPA path; falls back to /reset.html if anything throws. */
 function ResetWorld({ room }: { room: string }) {
   const [msg, setMsg] = useState("Resetting…");
+  const [err, setErr] = useState(false);
   useEffect(() => {
     const r = safeRoom(room);
+    let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`${HOLDER_URL.replace(/\/$/, "")}/api/worlds/${encodeURIComponent(r)}`, {
-          method: "DELETE",
-        });
-        const data = await res.json().catch(() => ({}));
-        clearRoomLocal(r);
-        setMsg(
-          res.ok
-            ? `Room "${r}" wiped on Holder and local cache cleared.`
-            : `Holder returned ${res.status}: ${JSON.stringify(data)}`,
-        );
+        const base = (HOLDER_URL || "https://holder-production.up.railway.app").replace(/\/$/, "");
+        const res = await fetch(`${base}/api/worlds/${encodeURIComponent(r)}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({} as Record<string, unknown>));
+        try { clearRoomLocal(r); } catch { /* ignore */ }
+        if (cancelled) return;
+        if (res.ok) {
+          setMsg(`Room "${r}" wiped on Holder and local cache cleared.`);
+        } else {
+          setErr(true);
+          setMsg(`Holder returned ${res.status}: ${JSON.stringify(data)}`);
+        }
       } catch (e) {
-        clearRoomLocal(r);
-        setMsg(`Network error (${String(e)}). Local cache still cleared.`);
+        try { clearRoomLocal(r); } catch { /* ignore */ }
+        if (cancelled) return;
+        setErr(true);
+        setMsg(`Network error: ${String(e)}. Local cache still cleared. You can also open /reset.html?room=${encodeURIComponent(r)}`);
       }
     })();
+    return () => { cancelled = true; };
   }, [room]);
   return (
     <main className="menu">
       <div className="card">
         <p className="kicker">WORLD RESET</p>
-        <h1>Done</h1>
-        <p>{msg}</p>
+        <h1>{err ? "Error" : "Done"}</h1>
+        <p className={err ? "err" : undefined}>{msg}</p>
         <button type="button" className="play" onClick={() => { window.location.href = "/"; }}>
           Back to Gameme
         </button>
+        <p style={{ marginTop: 12, fontSize: 13 }}>
+          Backup: <a href={`/reset.html?room=${encodeURIComponent(safeRoom(room))}`}>/reset.html?room={safeRoom(room)}</a>
+        </p>
       </div>
     </main>
   );
