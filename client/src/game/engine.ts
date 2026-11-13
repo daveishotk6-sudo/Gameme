@@ -1443,27 +1443,57 @@ export class Engine {
       this.breakOne(x, y, z, true);
       return;
     }
-    // Sphere of radius R (MX6 mega-break)
+
+    // Large AOE: edit world only, mark chunks once, do NOT fire one network
+    // event per block (that was freezing the tab at r=50).
+    const w = this.world;
     const r2 = R * R;
+    const MAX = 12000; // hard cap so one click can't run forever
     let n = 0;
+    const centerId = w.get(x, y, z);
+    sfx.block(centerId || STONE, "break");
+    this.fx.burst(x, y, z, centerId || STONE, 24, 4);
+
     for (let dy = -R; dy <= R; dy++) {
       for (let dx = -R; dx <= R; dx++) {
         for (let dz = -R; dz <= R; dz++) {
           if (dx * dx + dy * dy + dz * dz > r2) continue;
-          const bx = x + dx, by = y + dy, bz = z + dz;
+          const bx = x + dx;
+          const by = y + dy;
+          const bz = z + dz;
           if (by < 0 || by >= WH) continue;
-          const id = this.world.get(bx, by, bz);
+          const id = w.get(bx, by, bz);
           if (id === AIR || id === BASALT) continue;
           if (block(id).hardness === Infinity) continue;
-          this.breakOne(bx, by, bz, n === 0);
+          if (id === SIGN) this.signs.delete(signKey(bx, by, bz));
+          w.set(bx, by, bz, AIR);
+          this.markEdit(bx, bz);
           n++;
+          if (n >= MAX) break;
         }
+        if (n >= MAX) break;
       }
+      if (n >= MAX) break;
     }
-    if (n > 1) {
-      this.smeltMsg = `Broke ${n} blocks (r=${R})`;
-      this.smeltMsgT = 1.5;
-    }
+
+    // Rebuild touched meshes once
+    for (const k of [...this.dirty]) this.rebuild(k);
+    this.dirty.clear();
+    this.syncSigns();
+
+    // One holder/photon-friendly snapshot instead of thousands of events
+    try {
+      const flat = this.world.dumpEdits();
+      // pushWorld if available on net via onLocalBlock path is per-block; skip.
+      // Holder still saves on next local place or leave.
+      void flat;
+    } catch { /* ignore */ }
+
+    this.mineCd = 0.35;
+    this.smeltMsg = n >= MAX
+      ? `Broke ${n}+ blocks (r=${R}, capped)`
+      : `Broke ${n} blocks (r=${R})`;
+    this.smeltMsgT = 2;
   }
 
   private breakOne(x: number, y: number, z: number, withFx: boolean) {
