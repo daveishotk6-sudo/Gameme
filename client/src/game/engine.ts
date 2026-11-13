@@ -450,8 +450,8 @@ export class Engine {
   }
 
   /**
-   * MX6 only: turn a photo into a 64×64 wall of in-game blocks in front of the player.
-   * Maps each pixel to the nearest solid block color.
+   * MX6 only: turn a photo into a 64×64 wall of in-game blocks,
+   * 10 blocks ahead of where the player is facing.
    */
   mx6BuildPortraitFromImage(img: CanvasImageSource, srcW: number, srcH: number): number {
     if (!isMx6(this.o.name)) return 0;
@@ -461,7 +461,6 @@ export class Engine {
     canvas.height = SIZE;
     const ctx = canvas.getContext("2d");
     if (!ctx) return 0;
-    // Cover-crop to square then scale to 64²
     const side = Math.min(srcW, srcH);
     const sx = (srcW - side) / 2;
     const sy = (srcH - side) / 2;
@@ -470,37 +469,50 @@ export class Engine {
     const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
 
     const palette = portraitPalette();
-    // Facing direction + right vector so the wall faces the player
+    if (!palette.length) return 0;
+
+    // Look direction (horizontal) and right vector for the wall plane
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw);
     const rz = -Math.sin(this.yaw);
-    const dist = 6;
+    const dist = 10;
     const ox = Math.floor(this.pos.x + fx * dist);
     const oz = Math.floor(this.pos.z + fz * dist);
-    const oy = Math.floor(this.pos.y);
+    // World height is 64 — use full vertical range so nothing is clipped
+    const oy = 0;
+
+    // Preload chunks under the wall so set() applies terrain edits
+    this.world.stream(ox, oz, this.rd + 2);
 
     let placed = 0;
     for (let py = 0; py < SIZE; py++) {
       for (let px = 0; px < SIZE; px++) {
         const i = (py * SIZE + px) * 4;
         const a = data[i + 3]!;
-        if (a < 20) continue;
+        if (a < 8) continue;
         const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
         const id = nearestBlock(palette, r, g, b);
-        // px left→right on wall, py bottom→top (image y is top→bottom)
-        const wx = Math.round(ox + rx * (px - SIZE / 2));
-        const wy = oy + (SIZE - 1 - py);
-        const wz = Math.round(oz + rz * (px - SIZE / 2));
-        if (wy < 1 || wy >= WH - 1) continue;
+        const wx = Math.round(ox + rx * (px - (SIZE - 1) / 2));
+        const wy = oy + (SIZE - 1 - py); // 0..63
+        const wz = Math.round(oz + rz * (px - (SIZE - 1) / 2));
+        if (wy < 0 || wy >= WH) continue;
         this.world.set(wx, wy, wz, id);
+        this.markEdit(wx, wz);
         this.onLocalBlock?.(wx, wy, wz, id);
         placed++;
       }
     }
+    // Force mesh rebuild for every dirty chunk now
     this.syncChunks(true);
-    this.smeltMsg = `Portrait: ${placed} blocks`;
-    this.smeltMsgT = 3;
+    for (const k of [...this.dirty]) this.rebuild(k);
+    this.dirty.clear();
+
+    this.smeltMsg = placed > 0
+      ? `Portrait built ${placed} blocks · 10m ahead`
+      : "Portrait failed (no blocks)";
+    this.smeltMsgT = 4;
+    sfx.block(STONE, "place");
     return placed;
   }
 
