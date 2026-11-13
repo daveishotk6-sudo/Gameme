@@ -213,7 +213,7 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   // ------------------------------------------------------------ shared world edits
   let edits = new Map<string, WorldEdit>();
   try {
-    edits = parseEdits(localStorage.getItem(editsKey));
+    edits = new Map(); // Holder supplies world; skip local edit cache
   } catch {
     edits = new Map();
   }
@@ -221,7 +221,8 @@ export function connectPhoton(room: string, name: string, h: Handlers): PhotonLi
   
   const persistEditsLocal = () => {
     try {
-      localStorage.setItem(editsKey, JSON.stringify(mapToFlat(edits)));
+      // World edits are Holder-only; do not persist to localStorage.
+      void editsKey;
     } catch {
       /* full */
     }

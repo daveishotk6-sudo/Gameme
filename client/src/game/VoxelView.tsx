@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Engine, type HudState } from "./engine";
 import { block, CREATIVE_PALETTE, itemInfo } from "./blocks";
-import { loadSave } from "./save";
+import { loadSave, clearRoomLocal } from "./save";
 import { iconURL } from "./icons";
 import { SIGN_MAX_BREAKS, SIGN_MAX_CHARS, type SignData } from "./signs";
 import { sfx } from "./audio";
@@ -37,6 +37,8 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
     if (!el) return;
     const touch = window.matchMedia("(pointer: coarse)").matches;
     const slot = `room-${room}`;
+    // World builds are online-only (Holder). Drop any stale local map for this room.
+    clearRoomLocal(room);
     const saved = loadSave(slot);
     let placed = false;
     let known: Ghosts = {};
