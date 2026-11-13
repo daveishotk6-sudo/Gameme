@@ -153,6 +153,8 @@ export function connectPhoton(room: string, name: string, h: Handlers, opts: Con
   const sessionUserId = newUserId();
   let activeRegion = REGION;
   let authFailures = 0;
+  /** After Photon/PlayFab refuse the identity token, connect without it rather than logging the player out. */
+  let unverified = false;
   const CUSTOM_AUTH = Photon.LoadBalancing.Constants.CustomAuthenticationType;
   const connectRoom = (): boolean => {
     void (async () => {
@@ -160,7 +162,7 @@ export function connectPhoton(room: string, name: string, h: Handlers, opts: Con
         if (closed) return;
         h.onStatus(`Connecting (${activeRegion})`);
         let verified = false;
-        if (opts.auth) {
+        if (opts.auth && !unverified) {
           try {
             const a = await opts.auth();
             if (closed) return;
@@ -370,11 +372,16 @@ export function connectPhoton(room: string, name: string, h: Handlers, opts: Con
   client.onError = (code: number, msg: string) => {
     const textMsg = msg || `Photon error ${code}`;
     h.onStatus(textMsg);
-    // 32755 / 32753: Photon (via PlayFab) refused our identity token. Twice in a row means the login is no good.
-    if (opts.auth && (/32755|32753/.test(String(code) + " " + textMsg) || /custom authentication/i.test(textMsg))) {
-      if (++authFailures >= 2) {
-        h.onStatus("Login rejected");
-        opts.onAuthLost?.();
+    // 32755 / 32753: Photon (via PlayFab) refused our identity token. That is a server-side setup problem
+    // (app ID or custom-auth URL mismatch between Photon and PlayFab), not something a fresh login fixes, so
+    // don't throw the player back to the login screen. Try once without the identity, then play offline.
+    if (/32755|32753/.test(String(code) + " " + textMsg) || /custom authentication/i.test(textMsg)) {
+      authFailures++;
+      if (opts.auth && !unverified) {
+        unverified = true;
+        h.onStatus("Login service refused – joining without a verified name");
+      } else {
+        h.onStatus("Multiplayer offline (Photon login setup error)");
       }
     }
     if (debug) console.warn("[photon]", code, msg);
