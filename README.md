@@ -36,8 +36,8 @@ Each room code becomes `data/{room}.json` on that server. Live multiplayer still
 
 ## Accounts (PlayFab, title `15169B`)
 
-Players must log in with a PlayFab account (username + email + password) to play. The username is stored
-lowercase, so `Dave` and `dave` can't both exist, and each email can only be used once. The game then asks
+Players must log in with a PlayFab account (just a name and a password, no email) to play. The username is
+stored lowercase, so `Dave` and `dave` can't both exist. The game then asks
 PlayFab for a one-time Photon token, and Photon checks it with PlayFab, so the room knows each player by their
 verified PlayFab ID and a modified client can't pretend to be another account.
 
@@ -46,7 +46,8 @@ Only the public Title ID is in the code. **Never put the PlayFab Secret Key in t
 ### Setup (do these in order)
 
 1. **PlayFab → Settings → API Features:** tick the box that prevents new accounts being created through
-   anonymous login APIs (`LoginWithCustomID` etc.), so accounts can only be made with a username + email.
+   anonymous login APIs (`LoginWithCustomID` etc.), so accounts can only be made through the game's signup
+   (name + password).
 2. **PlayFab → Add-ons → Multiplayer → Photon:** add the Photon *Realtime* App ID
    `d24bf2c0-bee9-42ea-91de-7c431ba4ccb0` (the same one as `PUN_APP_ID` in `client/src/net/photon.ts`).
 3. **Photon dashboard → your Realtime app → Manage → Authentication → Custom Server:** set the Authentication
@@ -62,19 +63,18 @@ Only the public Title ID is in the code. **Never put the PlayFab Secret Key in t
 Until step 2 is done the game still works: it logs the PlayFab login in the console and connects without a
 verified identity (which step 5 later forbids).
 
-### Password resets
+### Lost passwords
 
-"Forgot your password?" uses PlayFab's default recovery email, which needs no setup. Try it with your own
-account first and check spam. For branded emails, configure an SMTP add-on and an Account Recovery template in
-PlayFab → Content → Email Templates.
+There is no email on an account, so there is no password reset. If someone forgets their password, open
+PlayFab → Players, find them, and delete the player. That frees the name so they can sign up again (their old
+progress on that account is gone).
 
 ### What this does and doesn't stop
 
-* One account per email, one name per account, no impersonating another account, and banned players can't log
-  back in.
+* One name per account, no impersonating another account, and banned players can't log back in.
 * The game limits one new account per device per 24 hours. That is only a speed bump: clearing site data resets it.
-* PlayFab itself does **not** limit how many accounts one person can create, and it doesn't check that an email is
-  real. Someone writing a script could still create many accounts. Stopping that needs a small signup server in
+* PlayFab itself does **not** limit how many accounts one person can create, and with no email required there is
+  nothing at all tying an account to a real person. Someone writing a script could easily create many accounts. Stopping that needs a small signup server in
   front of PlayFab (rate limit per IP + CAPTCHA) and a PlayFab title policy that blocks direct
   `Client/RegisterPlayFabUser`.
 * In-game name tags come from the player's client. A modified client could still *display* another player's

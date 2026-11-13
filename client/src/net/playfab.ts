@@ -3,9 +3,9 @@
  * to run and no SDK to install. Only the public Title ID lives in this file: the Secret Key must
  * never be put in client code.
  *
- * Players sign up with a username + email + password. The username (stored lowercase, so "Dave" and
- * "dave" can never both exist) is unique per title and the email is unique per account. The name
- * shown in game is the display name the player picked when signing up.
+ * Players sign up with just a username + password (no email). The username is stored lowercase, so
+ * "Dave" and "dave" can never both exist. The name shown in game is the display name the player picked
+ * when signing up. With no email there is no password reset: a lost password means a lost account.
  */
 import { PUN_APP_ID } from "./photon";
 
@@ -52,8 +52,6 @@ export function validateName(name: string): string | null {
   }
   return null;
 }
-
-export const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 
 /** The name used in game: always safe characters, at most 16 long. */
 export function gameName(a: Account): string {
@@ -135,17 +133,14 @@ export function explain(e: unknown): string {
   if (code === "InvalidParams") {
     // PlayFab's catch-all for a bad field: say which one in plain words.
     if (/password/i.test(e.message)) return "Passwords must be 6 to 100 characters.";
-    if (/email/i.test(e.message)) return "That email address doesn't look right.";
     if (/username/i.test(e.message)) return "Use 3 to 16 letters, numbers or underscores for your name.";
   }
   if (code === "UsernameNotAvailable" || n === 1009 || code === "NameNotAvailable") return "That name is already taken. Try another.";
-  if (code === "EmailAddressNotAvailable" || n === 1006) return "That email already has an account. Log in instead.";
-  if (code === "InvalidEmailAddress" || n === 1005) return "That email address doesn't look right.";
   if (code === "InvalidUsername" || n === 1007) return "Use 3 to 16 letters, numbers or underscores for your name.";
   if (code === "InvalidPassword" || n === 1008) return "Passwords must be 6 to 100 characters.";
   if (code === "AccountBanned" || n === 1002) return "This account has been banned.";
   if (code === "AccountDeleted") return "This account no longer exists.";
-  if (/InvalidUsernameOrPassword|InvalidEmailOrPassword|AccountNotFound/.test(code) || n === 1001) return "Wrong name, email or password.";
+  if (/InvalidUsernameOrPassword|InvalidEmailOrPassword|AccountNotFound/.test(code) || n === 1001) return "Wrong name or password.";
   if (e.status === 429 || /Throttled|RateLimit/i.test(code)) return "Too many attempts. Wait a minute and try again.";
   if (e.expired) return "Your login expired. Please log in again.";
   return e.message || "Something went wrong. Try again.";
@@ -177,10 +172,9 @@ function accountFrom(d: LoginData, fallbackName: string): Account {
 }
 
 /** Create an account. The name is permanent. Throws a PlayFabError. */
-export async function registerAccount(input: { name: string; email: string; password: string }): Promise<Account> {
+export async function registerAccount(input: { name: string; password: string }): Promise<Account> {
   const bad = validateName(input.name);
   if (bad) throw new PlayFabError(400, bad, "InvalidUsername");
-  if (!validateEmail(input.email)) throw new PlayFabError(400, "That email address doesn't look right.", "InvalidEmailAddress");
   const wait = signupWaitMs();
   if (wait > 0) {
     const h = Math.ceil(wait / 3600e3);
@@ -190,9 +184,8 @@ export async function registerAccount(input: { name: string; email: string; pass
     TitleId: TITLE_ID,
     Username: input.name.toLowerCase(),
     DisplayName: input.name,
-    Email: input.email.trim(),
     Password: input.password,
-    RequireBothUsernameAndEmail: true,
+    RequireBothUsernameAndEmail: false, // name + password is enough
     InfoRequestParameters: INFO,
   });
   try {
@@ -205,7 +198,7 @@ export async function registerAccount(input: { name: string; email: string; pass
   return a;
 }
 
-/** Log in with a username or an email address. */
+/** Log in with a name (an email also works, for accounts made before email was dropped). */
 export async function loginAccount(nameOrEmail: string, password: string): Promise<Account> {
   const id = nameOrEmail.trim();
   const d = id.includes("@")
@@ -218,18 +211,6 @@ export async function loginAccount(nameOrEmail: string, password: string): Promi
 export async function checkSession(a: Account): Promise<Account> {
   const d = await call<{ AccountInfo?: { Username?: string; TitleInfo?: { DisplayName?: string } } }>("/Client/GetAccountInfo", {}, a.sessionTicket);
   return { ...a, displayName: d.AccountInfo?.TitleInfo?.DisplayName || a.displayName };
-}
-
-/** Email a password-reset link (PlayFab's default template; no setup needed). */
-export async function sendRecoveryEmail(email: string): Promise<void> {
-  if (!validateEmail(email)) throw new PlayFabError(400, "That email address doesn't look right.", "InvalidEmailAddress");
-  try {
-    await call("/Client/SendAccountRecoveryEmail", { TitleId: TITLE_ID, Email: email.trim() });
-  } catch (e) {
-    // Don't reveal which emails have accounts: an unknown email looks the same as a sent one.
-    if (e instanceof PlayFabError && /AccountNotFound|NoContactEmailAddressFound/.test(e.code)) return;
-    throw e;
-  }
 }
 
 // ------------------------------------------------------------------ Photon identity
