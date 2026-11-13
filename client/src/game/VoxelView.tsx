@@ -283,7 +283,7 @@ export default function VoxelView({ seed, room, name, onExit }: Props) {
           </p>
           <p>{status || "online"} · {online} in room</p>
           <label className="mx6-file">
-            Photo → 64×64 blocks
+            Photo → 32×32 blocks
             <input
               type="file"
               accept="image/*"

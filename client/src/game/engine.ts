@@ -450,12 +450,12 @@ export class Engine {
   }
 
   /**
-   * MX6 only: turn a photo into a 64×64 wall of in-game blocks,
+   * MX6 only: turn a photo into a 32×32 wall of in-game blocks,
    * 10 blocks ahead of where the player is facing.
    */
   mx6BuildPortraitFromImage(img: CanvasImageSource, srcW: number, srcH: number): number {
     if (!isMx6(this.o.name)) return 0;
-    const SIZE = 64;
+    const SIZE = 32;
     const canvas = document.createElement("canvas");
     canvas.width = SIZE;
     canvas.height = SIZE;
@@ -479,8 +479,8 @@ export class Engine {
     const dist = 10;
     const ox = Math.floor(this.pos.x + fx * dist);
     const oz = Math.floor(this.pos.z + fz * dist);
-    // World height is 64 — use full vertical range so nothing is clipped
-    const oy = 0;
+    // 32 tall — center near the player so it sits in view
+    const oy = Math.max(0, Math.min(WH - 32, Math.floor(this.pos.y) - 8));
 
     // Preload chunks under the wall so set() applies terrain edits
     this.world.stream(ox, oz, this.rd + 2);
@@ -509,7 +509,7 @@ export class Engine {
     this.dirty.clear();
 
     this.smeltMsg = placed > 0
-      ? `Portrait built ${placed} blocks · 10m ahead`
+      ? `Portrait built ${placed} blocks · 32² · 10m ahead`
       : "Portrait failed (no blocks)";
     this.smeltMsgT = 4;
     sfx.block(STONE, "place");
@@ -1212,7 +1212,7 @@ export class Engine {
     const dx = -Math.sin(this.yaw) * Math.cos(this.pitch);
     const dy = Math.sin(this.pitch);
     const dz = -Math.cos(this.yaw) * Math.cos(this.pitch);
-    this.hit = raycast(w, ex, ey, ez, dx, dy, dz, 5.5);
+    this.hit = raycast(w, ex, ey, ez, dx, dy, dz, 55);
     const hit = this.hit;
     if (hit) {
       this.outline.visible = true;
